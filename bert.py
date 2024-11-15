@@ -21,6 +21,13 @@ from torch import nn, optim, functional as F
 from torch.utils.data import Dataset, DataLoader
 from transformers import BertModel, BertTokenizer, AdamW, get_linear_schedule_with_warmup
 
+import jieba.analyse
+from nltk.corpus import stopwords
+import csv
+from tqdm import tqdm
+stopwords_list = stopwords.words('english')
+stopwords_list.append('###')
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 emotion_list = ['anger', 'brain dysfunction (forget)', 'emptiness', 'hopelessness', 'loneliness', 'sadness', 'suicide intent', 'worthlessness']
 
@@ -360,6 +367,28 @@ def test_dataset(test_set, class_names = [],
    
     pred_list = pred_list.tolist()
     true_list = true_list.tolist()
+
+    #per classes
+    classes_result = [[] for _ in range(len(class_names))]
+    for result_i in range(len(true_list)):
+        classes_result[true_list[result_i]].append((true_list[result_i], pred_list[result_i]))
+    classes_f1 = {}
+    for c_i in range(len(class_names)):
+        class_name = ''.join(class_names[c_i])
+        true_list_c = [x[0] for x in classes_result[c_i]]
+        pred_list_c = [x[1] for x in classes_result[c_i]]
+        true_list_c = [class_names[c] for c in true_list_c]
+        pred_list_c = [class_names[c] for c in pred_list_c]
+        true_list_c = convert_labels(true_list_c)
+        pred_list_c = convert_labels(pred_list_c)
+        classes_f1[class_name] = f1_score(y_true=true_list_c, y_pred=pred_list_c, average='macro')
+        if not np.isnan(classes_f1[class_name]):
+            classes_f1[class_name] = classes_f1[class_name]
+    sorted_classes_f1 = sorted(classes_f1.items(), key=lambda x: x[1], reverse=True)
+    sorted_classes_f1 = [x for x in sorted_classes_f1 if not np.isnan(x[1])]
+    print('high f1 classes: ', sorted_classes_f1[:5])
+    print('low f1 classes: ', sorted_classes_f1[-5:])
+
     pred_list = [class_names[c] for c in pred_list]
     true_list = [class_names[c] for c in true_list]
     
@@ -377,7 +406,25 @@ def test_dataset(test_set, class_names = [],
     #per label
     label_names = ["loneliness", "hopelessness", "sadness", "brain dysfunction (forget)", "worthlessness", "emptiness", "anger", "suicide intent"]
     for l in range(8):
-        print('f1 for label: ', label_names[l], f1_score(y_true=[i[l] for i in true_list], y_pred=[i[l] for i in pred_list], average='macro') * 2 - 1)
+        print('f1 for label: ', label_names[l], f1_score(y_true=[i[l] for i in true_list], y_pred=[i[l] for i in pred_list], average='macro'))
+
+
+    #keyword analyse
+    posts_labels = [''] * 8
+    for t_i in range(len(texts)):
+        text = texts[t_i]
+        for i in range(8):
+            if pred_list[t_i][i] == 1 : posts_labels[i] += text
+
+    for i in range(8):
+        k_l = jieba.analyse.extract_tags(posts_labels[i], topK=99999999, withWeight=True)
+        keywords = []
+        for k_i in tqdm(range(len(k_l)), desc='filtering keywords of'+ label_names[i]):
+            if k_l[k_i][0] not in stopwords_list:
+                keywords.append(k_l[k_i])
+        with open('keywords/'+ label_names[i]+'_pred.csv', 'w+') as f:
+            csvWriter = csv.writer(f)
+            for i in keywords: csvWriter.writerow(i)
     
     result = {}
     result['f1_micro'] = f1_mi
@@ -491,7 +538,13 @@ def main(args):
         dataset = train_set + val_set + test_set # capture all labels
 
         # Count the number of labels in test_set
-        labels = [item[0] for item in classifier_by_text(dataset)]
+        labels = [str(item['label_id']) for item in dataset]
+        classes_count = {}
+        for l in labels: classes_count[l] = classes_count.get(l, 0) + 1
+        classes_count = [(k, v) for k, v in classes_count.items()]
+        classes_count = sorted(classes_count, key = lambda x: x[1], reverse = True)
+        print('classes count high: ', classes_count[:5])
+        print('classes count low: ', classes_count[-5:])
         labels = [list(l.strip()) for l in labels if l.strip() != '']
         label_counts = [0] * 8
         for l in labels:
@@ -500,6 +553,23 @@ def main(args):
                 if (l[i-8] == '1'): label_counts[i] += 1
         label_names = ["loneliness", "hopelessness", "sadness", "brain dysfunction (forget)", "worthlessness", "emptiness", "anger", "suicide intent"]
         for i in range(8): print(label_names[i], ': ', label_counts[i])
+
+        #keyword analyse
+        posts_labels = [''] * 8
+        for item in dataset:
+            text = item["text"]
+            for i in range(8):
+                if label_names[i] in item["emotions"]: posts_labels[i] += text
+
+        for i in range(8):
+            k_l = jieba.analyse.extract_tags(posts_labels[i], topK=99999999, withWeight=True)
+            keywords = []
+            for k_i in tqdm(range(len(k_l)), desc='filtering keywords of'+ label_names[i]):
+                if k_l[k_i][0] not in stopwords_list:
+                    keywords.append(k_l[k_i])
+            with open('keywords/'+ label_names[i]+'_true.csv', 'w+') as f:
+                csvWriter = csv.writer(f)
+                for i in keywords: csvWriter.writerow(i)
 
         class_names = sorted(list(set([item[0] for item in classifier_by_text(dataset)])), key = lambda x: x)
         class_names = [c.strip() for c in class_names if c.strip() != '']
