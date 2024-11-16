@@ -511,6 +511,6 @@ if __name__ == "__main__":
    
     main(args)
     
-# python bert.py  --mode "train" --model_name "bert-base-cased" --epochs 25 --batch_size 8 --max_length 256 --train_path "dataset/train.json" --val_path "dataset/val.json" --test_path "dataset/test.json"
+# python bert.py  --mode "train" --model_name "/data1/lipengfei/basemodels/bert-base-uncased" --epochs 25 --batch_size 8 --max_length 256 --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json"
 
-# python bert.py --mode "test" --train_path "dataset/train.json" --val_path "dataset/val.json" --test_path "dataset/test.json" --max_length 300 --test_batch_size 16
+# python bert.py --mode "test" --model_name "/data1/lipengfei/basemodels/bert-base-uncased" --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json" --max_length 256 --test_batch_size 16

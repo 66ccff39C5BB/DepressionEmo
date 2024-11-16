@@ -1,0 +1,2 @@
+time=$(date "+%Y%m%d-%H%M%S")
+CUDA_VISIBLE_DEVICES=1 python seq2seq.py --mode "train" --model_name "/data1/lipengfei/basemodels/bart-base" --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json" --epochs 25 --batch_size 4 --max_source_length 256 > logs/${time}BART.log

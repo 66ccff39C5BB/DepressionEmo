@@ -1,6 +1,5 @@
 import argparse
 import datasets
-import evaluate
 import glob
 import matplotlib.pyplot as plt
 import nltk
@@ -166,11 +165,11 @@ def train(train_set, val_set, test_set, tokenizer, model, model_name = 'facebook
     #model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
     #model = model.to(device)
 
-    # Metric
-    metric_f1 = evaluate.load("f1")
-    metric_pre = evaluate.load("precision")
-    metric_re = evaluate.load("recall")
-    metric_rouge = evaluate.load("rouge")
+    # # Metric
+    # metric_f1 = evaluate.load("f1")
+    # metric_pre = evaluate.load("precision")
+    # metric_re = evaluate.load("recall")
+    # metric_rouge = evaluate.load("rouge")
 
     # we want to ignore tokenizer pad token in the loss
     label_pad_token_id = -100
@@ -183,11 +182,11 @@ def train(train_set, val_set, test_set, tokenizer, model, model_name = 'facebook
         )
 
     # Hugging Face repository id
-    repository_id = ''
-    try:
-        repository_id = f"{model_name.split('/')[1]}"
-    except:
-        repository_id = f"{model_name}"
+    repository_id = 'bart-base'
+    # try:
+    #     repository_id = f"{model_name.split('/')[1]}"
+    # except:
+    #     repository_id = f"{model_name}"
 
     # define training args
     training_args = Seq2SeqTrainingArguments(
@@ -387,6 +386,8 @@ if __name__ == "__main__":
     
     main(args)
     
-# python seq2seq.py --mode "train" --model_name "facebook/bart-base" --train_path "dataset/train.json" --val_path "dataset/val.json" --test_path "dataset/test.json" --epochs 25 --batch_size 4 --max_source_length 256
-# python seq2seq.py --mode "test" --model_name "facebook/bart-base" --model_path "bart-base\checkpoint-1321" --test_path "dataset/test.json" --test_batch_size 4 --max_source_length 256 --min_target_length 1
+# python seq2seq.py --mode "train" --model_name "/data1/lipengfei/basemodels/bart-base" --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json" --epochs 25 --batch_size 4 --max_source_length 256
+
+# python seq2seq.py --mode "test" --model_name "/data1/lipengfei/basemodels/bart-base" --model_path "bart-base\model_checkpoint_xxx" --test_path "Dataset/test.json" --test_batch_size 4 --max_source_length 256 --min_target_length 1
+
         
