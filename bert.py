@@ -1,5 +1,7 @@
 import argparse
 import gc
+import jieba
+import jieba.analyse
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -35,26 +37,53 @@ class PreparedDataset():
         return len(self.texts)
 
     def __getitem__(self, item):
-        text = str(self.texts[item])
-        category = self.categories[item]
-        encoding = self.tokenizer.encode_plus(
-            text,
-            add_special_tokens=True,
-            max_length=self.max_len,
-            return_token_type_ids=False,
-            #pad_to_max_length=True,
-            padding = "max_length",
-            return_attention_mask=True,
-            truncation=True,
-            return_tensors='pt',
-            )
+        # add counterfactual_text code
+        results = []
+        texts = [str(self.texts[item])]
+        ori_text = [word.strip() for word in texts[0].split(' ') if len(word.strip())>0]
+        Mask_Token = '[MASK]'
+        keywords = jieba.analyse.extract_tags(texts[0], topK=999999999, withWeight=True)
+        keywords_map = {}
+        fc = []
+        pc = []        
+        for j in range(len(ori_text)):
+            fc.append(Mask_Token)
+            if ori_text[j] in keywords_map:
+                pc.append(Mask_Token)
+            else:
+                pc.append(ori_text[j])
+        texts.append(' '.join(fc))
+        texts.append(' '.join(pc))
 
+
+        for kws in keywords:
+            keywords_map[kws[0]] = kws[1]
+        for text in texts:
+            category = self.categories[item]
+            encoding = self.tokenizer.encode_plus(
+                text,
+                add_special_tokens=True,
+                max_length=self.max_len,
+                return_token_type_ids=False,
+                #pad_to_max_length=True,
+                padding = "max_length",
+                return_attention_mask=True,
+                truncation=True,
+                return_tensors='pt',
+                )
+
+            results.append({
+                    'text': text,
+                    'input_ids': encoding['input_ids'].flatten(),
+                    'attention_mask': encoding['attention_mask'].flatten(),
+                    'categories': torch.tensor(category, dtype=torch.long)
+                })
         return {
-                'text': text,
-                'input_ids': encoding['input_ids'].flatten(),
-                'attention_mask': encoding['attention_mask'].flatten(),
-                'categories': torch.tensor(category, dtype=torch.long)
-            }
+            'text': [result['text'] for result in results],
+            'input_ids': [result['input_ids'] for result in results],
+            'attention_mask': [result['attention_mask'] for result in results],
+            'categories': results[0]['categories']
+        }
 
 class CategoryClassifier(nn.Module):
     def __init__(self, n_classes, pretrained_model = 'bert-base-cased'):
@@ -102,7 +131,7 @@ def create_data_loader(dataset, tokenizer, class_names, max_len, batch_size):
     return DataLoader(ds, batch_size=batch_size, num_workers=4)
 
 
-def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_examples, class_names):
+def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_examples, class_names, cur_x = 0, cur_y = 0):
 
     model = model.train()
     losses = []
@@ -113,17 +142,27 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
     
     for d in data_loader:
         
-        sys.stdout.write('Training batch: %d/%d \r' % (i, len(data_loader)))
+        # sys.stdout.write('Training batch: %d/%d \r' % (i, len(data_loader)))
         #sys.stdout.flush()
         
         i = i + 1
-        input_ids = d["input_ids"].to(device)
-        attention_mask = d["attention_mask"].to(device)
+        input_ids = d["input_ids"][0].to(device)
+        attention_mask = d["attention_mask"][0].to(device)
         categories = d["categories"].to(device)
         outputs = model(input_ids=input_ids, attention_mask=attention_mask)
 
-        _, preds = torch.max(outputs, dim=1)
+        # _, preds = torch.max(outputs, dim=1)
         loss = loss_fn(outputs, categories)
+
+        # calculate the counterfactual text
+        with torch.no_grad():
+            input_ids_fc = d["input_ids"][1].to(device)
+            attention_mask_fc = d["attention_mask"][1].to(device)
+            outputs_fc = model(input_ids=input_ids_fc, attention_mask=attention_mask_fc)
+            input_ids_pc = d["input_ids"][2].to(device)
+            attention_mask_pc = d["attention_mask"][2].to(device)
+            outputs_pc = model(input_ids=input_ids_pc, attention_mask=attention_mask_pc)
+        _, preds = torch.max(outputs - cur_x * outputs_fc - cur_y * outputs_pc, dim=1)
         
         correct_predictions += torch.sum(preds == categories)
         losses.append(loss.item())
@@ -189,56 +228,98 @@ def convert_labels(labels):
     
 def eval_model(model, data_loader, loss_fn, device, n_examples, class_names):
     model = model.eval()
-    losses = []
-    
-    pred_list = []
-    true_list = []
-    
+
+    outputs = []
+    outputs_fc = []
+    outputs_pc = []
+    true_classes = []
     with torch.no_grad():
         for d in data_loader:
-            input_ids = d["input_ids"].to(device)
-            attention_mask = d["attention_mask"].to(device)
+            input_ids = d["input_ids"][0].to(device)
+            attention_mask = d["attention_mask"][0].to(device)
             categories = d["categories"].to(device)
             
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            _, preds = torch.max(outputs, dim=1)
-            loss = loss_fn(outputs, categories)
-            pred_list.append(preds.tolist())
-            true_list.append(categories.tolist())
-            losses.append(loss.item())
-   
-    pred_list = sum(pred_list, [])
-    true_list = sum(true_list, [])
-    
-    pred_list = [class_names[c] for c in pred_list]
-    true_list = [class_names[c] for c in true_list]
-    
-    #print('pred_list: ', pred_list)
-    #print('true_list: ', true_list)
-    
-    pred_list = convert_labels(pred_list)
-    true_list = convert_labels(true_list)
-    
-    f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
-    re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
-    pre_mi = precision_score(y_true=true_list, y_pred=pred_list, average='micro')
-    
-    f1_mac = f1_score(y_true=true_list, y_pred=pred_list, average='macro')
-    re_mac = recall_score(y_true=true_list, y_pred=pred_list, average='macro')
-    pre_mac = precision_score(y_true=true_list, y_pred=pred_list, average='macro')
+            outputs.append(model(input_ids=input_ids, attention_mask=attention_mask))
+            outputs_fc.append(model(input_ids=d["input_ids"][1].to(device), attention_mask=d["attention_mask"][1].to(device)))
+            outputs_pc.append(model(input_ids=d["input_ids"][2].to(device), attention_mask=d["attention_mask"][2].to(device)))
+            true_classes.append(categories)
+
+
+    Dirs = [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0]]
+    best_x, best_y, cmaf1_map = 0.0, 0.0, {}
+
+    best_dev_cmaf1, best_dev_cmarec, best_dev_cmapre = -99999999, -99999999, -99999999
+    best_dev_cmif1, best_dev_cmirec, best_dev_cmipre = -99999999, -99999999, -99999999
+    best_mean_loss = 99999999
+
+    while True:
+        recorded_x, recorded_y = best_x, best_y
+        for i in range(len(Dirs)):
+            cur_x, cur_y, step = recorded_x, recorded_y, 0
+            while True:
+                key = '{:.2f}_{:.2f}'.format(cur_x, cur_y)
+                if key not in cmaf1_map.keys():
+
+                    losses = []    
+                    pred_list = []
+                    true_list = []
+                    
+                    for o, o_fc, o_pc, categories in zip(outputs, outputs_fc, outputs_pc, true_classes):
+                        _, preds = torch.max(o - cur_x * o_fc - cur_y * o_pc, dim=1)
+
+                        loss = loss_fn(o - cur_x * o_fc - cur_y * o_pc, categories)
+                        pred_list.append(preds.tolist())
+                        true_list.append(categories.tolist())
+                        losses.append(loss.item())
+        
+                    pred_list = sum(pred_list, [])
+                    true_list = sum(true_list, [])
+                    
+                    pred_list = [class_names[c] for c in pred_list]
+                    true_list = [class_names[c] for c in true_list]
+                    
+                    pred_list = convert_labels(pred_list)
+                    true_list = convert_labels(true_list)
+                    
+                    f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
+                    re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
+                    pre_mi = precision_score(y_true=true_list, y_pred=pred_list, average='micro')
+                    
+                    f1_mac = f1_score(y_true=true_list, y_pred=pred_list, average='macro')
+                    re_mac = recall_score(y_true=true_list, y_pred=pred_list, average='macro')
+                    pre_mac = precision_score(y_true=true_list, y_pred=pred_list, average='macro')
+                    
+
+                    cmaf1_map[key] = f1_mac
+                f1_mac = cmaf1_map[key]
+                if f1_mac > best_dev_cmaf1:
+                    best_x, best_y, step = cur_x, cur_y, 0
+                    best_dev_cmaf1, best_dev_cmarec, best_dev_cmapre = f1_mac, re_mac, pre_mac
+                    best_dev_cmif1, best_dev_cmirec, best_dev_cmipre = f1_mi, re_mi, pre_mi
+                    best_mean_loss = np.mean(losses)
+                if step>=args.Beam_Search_Range:
+                    break
+                cur_x += Dirs[i][0] * args.Beam_Search_Step
+                cur_y += Dirs[i][1] * args.Beam_Search_Step
+                step += 1
+        if recorded_x==best_x and recorded_y==best_y:
+            break
     
     result = {}
-    result['f1_micro'] = f1_mi
-    result['recall_micro'] = re_mi
-    result['precision_micro'] = pre_mi
-    
-    result['f1_macro'] = f1_mac
-    result['recall_macro'] = re_mac
-    result['precision_macro'] = pre_mac
+    result['f1_micro'] = best_dev_cmif1
+    result['recall_micro'] = best_dev_cmirec
+    result['precision_micro'] = best_dev_cmipre
 
-    return result, np.mean(losses)
+    result['f1_macro'] = best_dev_cmaf1
+    result['recall_macro'] = best_dev_cmarec
+    result['precision_macro'] = best_dev_cmapre
 
-def get_predictions(model, data_loader):
+    result['best_x'] = best_x
+    result['best_y'] = best_y
+
+    return result, best_mean_loss
+
+def get_predictions(model, data_loader, best_x, best_y):
     model = model.eval()
     sentences = []
     predictions = []
@@ -247,15 +328,18 @@ def get_predictions(model, data_loader):
 
     with torch.no_grad():
         for d in data_loader:
-            texts = d["text"]
-            input_ids = d["input_ids"].to(device)
-            attention_mask = d["attention_mask"].to(device)
+            texts = d["text"][0]
+            input_ids = d["input_ids"][0].to(device)
+            attention_mask = d["attention_mask"][0].to(device)
             categories = d["categories"].to(device)
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            _, preds = torch.max(outputs, dim=1)
+            outputs_fc = model(input_ids=d["input_ids"][1].to(device), attention_mask=d["attention_mask"][1].to(device))
+            outputs_pc = model(input_ids=d["input_ids"][2].to(device), attention_mask=d["attention_mask"][2].to(device))
+            # _, preds = torch.max(outputs, dim=1)
+            _, preds = torch.max(outputs - best_x * outputs_fc - best_y * outputs_pc, dim=1)
             sentences.extend(texts)
             predictions.extend(preds)
-            prediction_probs.extend(outputs)
+            prediction_probs.extend(outputs - best_x * outputs_fc - best_y * outputs_pc)
             real_values.extend(categories)
 
     predictions = torch.stack(predictions).cpu()
@@ -278,9 +362,9 @@ def train_model(train_set, val_set, class_names = [], pretrained_model = 'bert-b
     model = CategoryClassifier(len(class_names), pretrained_model)
     model = model.to(device)
 
-    data = next(iter(train_data_loader))
-    input_ids = data['input_ids'].to(device)
-    attention_mask = data['attention_mask'].to(device)
+    # data = next(iter(train_data_loader))
+    # input_ids = data['input_ids'].to(device)
+    # attention_mask = data['attention_mask'].to(device)
     #F.softmax(model(input_ids, attention_mask), dim=1)
     
     # lr=2e-5
@@ -297,17 +381,22 @@ def train_model(train_set, val_set, class_names = [], pretrained_model = 'bert-b
     best_metric = 0
     best_epoch = -1
     write_single_dict_to_json_file(saved_history_file, {}, "w")
+    cur_x, cur_y = 0.0, 0.0
     
     for epoch in range(epochs):
         print('-' * 50)
         print(f'Epoch {epoch + 1}/{epochs}')
         
 
-        train_result, train_loss = train_epoch(model, train_data_loader, loss_fn, optimizer, device, scheduler, len(train_set), class_names)
+        train_result, train_loss = train_epoch(model, train_data_loader, loss_fn, optimizer, device, scheduler, len(train_set), class_names, cur_x, cur_y)
         train_f1_macro = train_result['f1_macro']
         print(f'Train loss: {train_loss}, Train f1 macro: {train_f1_macro}')
         
         val_result, val_loss = eval_model(model, val_data_loader, loss_fn, device, len(val_set), class_names)
+
+        cur_x = val_result['best_x']
+        cur_y = val_result['best_y']
+        
         f1_macro = val_result['f1_macro']
         print(f'Val loss {val_loss}, Val f1 macro: {f1_macro}')
         
@@ -342,7 +431,7 @@ def train_model(train_set, val_set, class_names = [], pretrained_model = 'bert-b
  
 def test_dataset(test_set, class_names = [],
                      pretrained_model = 'bert-base-cased', saved_model_file = 'best_bert_model.bin',
-                     saved_history_file = 'best_bert_model.json', max_len = 256, batch_size = 8):
+                     saved_history_file = 'best_bert_model.json', max_len = 256, batch_size = 8, best_x = 0.0, best_y = 0.0):
     
     tokenizer = BertTokenizer.from_pretrained(pretrained_model)
 
@@ -356,7 +445,7 @@ def test_dataset(test_set, class_names = [],
     model.load_state_dict(torch.load(saved_model_file))
     model = model.to(device)
     
-    texts, pred_list, pred_probs, true_list = get_predictions(model, test_data_loader)
+    texts, pred_list, pred_probs, true_list = get_predictions(model, test_data_loader, 0, 0)
    
     pred_list = pred_list.tolist()
     true_list = true_list.tolist()
@@ -374,17 +463,46 @@ def test_dataset(test_set, class_names = [],
     re_mac = recall_score(y_true=true_list, y_pred=pred_list, average='macro')
     pre_mac = precision_score(y_true=true_list, y_pred=pred_list, average='macro')
     
-    result = {}
-    result['f1_micro'] = f1_mi
-    result['recall_micro'] = re_mi
-    result['precision_micro'] = pre_mi
+    ori_result = {}
+    ori_result['f1_micro'] = f1_mi
+    ori_result['recall_micro'] = re_mi
+    ori_result['precision_micro'] = pre_mi
     
-    result['f1_macro'] = f1_mac
-    result['recall_macro'] = re_mac
-    result['precision_macro'] = pre_mac
+    ori_result['f1_macro'] = f1_mac
+    ori_result['recall_macro'] = re_mac
+    ori_result['precision_macro'] = pre_mac
     
-    print('result: ', result)
-    return result
+    print('Original result: ', ori_result)
+
+    texts, pred_list, pred_probs, true_list = get_predictions(model, test_data_loader, best_x, best_y)
+   
+    pred_list = pred_list.tolist()
+    true_list = true_list.tolist()
+    pred_list = [class_names[c] for c in pred_list]
+    true_list = [class_names[c] for c in true_list]
+    
+    pred_list = convert_labels(pred_list)
+    true_list = convert_labels(true_list)
+    
+    f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
+    re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
+    pre_mi = precision_score(y_true=true_list, y_pred=pred_list, average='micro')
+    
+    f1_mac = f1_score(y_true=true_list, y_pred=pred_list, average='macro')
+    re_mac = recall_score(y_true=true_list, y_pred=pred_list, average='macro')
+    pre_mac = precision_score(y_true=true_list, y_pred=pred_list, average='macro')
+    
+    cf_result = {}
+    cf_result['f1_micro'] = f1_mi
+    cf_result['recall_micro'] = re_mi
+    cf_result['precision_micro'] = pre_mi
+    
+    cf_result['f1_macro'] = f1_mac
+    cf_result['recall_macro'] = re_mac
+    cf_result['precision_macro'] = pre_mac
+    
+    print('Counterfact result: ', cf_result)
+    return ori_result, cf_result
 
 def predict_single(text, tokenizer, model, max_len = 256):
 
@@ -490,10 +608,17 @@ def main(args):
         
         test_dataset(test_set, class_names = class_names,
                      pretrained_model = args.model_name, saved_model_file = 'best_bert_model.bin',
-                     saved_history_file = 'best_bert_model.json', max_len = args.max_length, batch_size = args.test_batch_size)
+                     saved_history_file = 'best_bert_model.json', max_len = args.max_length, batch_size = args.test_batch_size,
+                     best_x = args.best_x, best_y = args.best_y)
 
 if __name__ == "__main__":
 
+    #fix random seed
+    seed = 42
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    
     parser = argparse.ArgumentParser(description='Training Parameters')
     parser.add_argument('--mode', type=str, default='train') # or test
     parser.add_argument('--model_name', type=str, default='bert-base-cased') # or test
@@ -506,6 +631,10 @@ if __name__ == "__main__":
     parser.add_argument('--max_length', type=int, default=256)
     parser.add_argument('--model_path', type=str, default='bart-base\checkpoint-452')
     parser.add_argument('--test_file', type=str, default='dataset/test.json')
+    parser.add_argument('--Beam_Search_Range', type=int, default=20)
+    parser.add_argument('--Beam_Search_Step', type=float, default=0.1)
+    parser.add_argument('--best_x', type=float, default=0.0)
+    parser.add_argument('--best_y', type=float, default=0.0)
   
     args = parser.parse_args()
    
