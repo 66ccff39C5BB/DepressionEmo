@@ -2,3 +2,4 @@
 *.json
 logs/**
 bart-base*/**
+__pycache__/**

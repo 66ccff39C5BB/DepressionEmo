@@ -25,6 +25,7 @@ from transformers import BertModel, BertTokenizer, AdamW, get_linear_schedule_wi
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 emotion_list = ['anger', 'brain dysfunction (forget)', 'emptiness', 'hopelessness', 'loneliness', 'sadness', 'suicide intent', 'worthlessness']
+symptom_list = ['Sadness', 'Pessimism', 'Sense_of_failure', 'Loss_of_Pleasure', 'Guilty_feelings', 'Sense_of_punishment', 'Self-dislike', 'Self-incrimination', 'Suicidal_ideas', 'Crying', 'Agitation', 'Social_withdrawal', 'Indecision', 'Feelings_of_worthlessness', 'Loss_of_energy', 'Change_of_sleep', 'Irritability', 'Changes_in_appetite', 'Concentration_difficulty', 'Tiredness_or_fatigue', 'Loss_of_interest_in_sex']
 
 class PreparedDataset():
     def __init__(self, texts, categories, tokenizer, max_len):
@@ -210,12 +211,11 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
 
 
 def convert_labels(labels):
-    
     labels2 = []
     for idx, label in enumerate(labels):
         
         temp = []
-        num = len(emotion_list) - len(label)
+        num = len(label_list) - len(label)
         if (num == 0): 
             temp = [int(x) for x in label]
         else:
@@ -639,7 +639,9 @@ if __name__ == "__main__":
     parser.add_argument('--best_y', type=float, default=0.0)
   
     args = parser.parse_args()
-   
+    
+    label_list = symptom_list if "BDISen" in args.train_path else emotion_list
+
     main(args)
     
 # python bert.py  --mode "train" --model_name "/data1/lipengfei/basemodels/bert-base-uncased" --epochs 25 --batch_size 8 --max_length 256 --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json"
