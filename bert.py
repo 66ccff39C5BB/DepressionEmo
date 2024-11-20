@@ -46,6 +46,8 @@ class PreparedDataset():
         keywords_map = {}
         fc = []
         pc = []        
+        for kws in keywords:
+            keywords_map[kws[0]] = kws[1]
         for j in range(len(ori_text)):
             fc.append(Mask_Token)
             if ori_text[j] in keywords_map:
@@ -56,8 +58,6 @@ class PreparedDataset():
         texts.append(' '.join(pc))
 
 
-        for kws in keywords:
-            keywords_map[kws[0]] = kws[1]
         for text in texts:
             category = self.categories[item]
             encoding = self.tokenizer.encode_plus(
