@@ -398,16 +398,18 @@ def train_model(train_set, val_set, class_names = [], pretrained_model = 'bert-b
         cur_y = val_result['best_y']
         
         f1_macro = val_result['f1_macro']
-        print(f'Val loss {val_loss}, Val f1 macro: {f1_macro}')
+        f1_micro = val_result['f1_micro']
+        print(f'Val loss {val_loss}, Val f1 macro: {f1_macro}, Val f1 micro: {f1_micro}')
         
         history['train_result'].append(train_result)
         history['train_loss'].append(train_loss)
         history['val_result'].append(val_result)
         history['val_loss'].append(val_loss)
       
-        if f1_macro > best_metric:
+        if f1_macro + f1_micro > best_metric:
             torch.save(model.state_dict(), saved_model_file)
-            best_metric = f1_macro
+            print('Model saved. Best x: ', cur_x, ' Best y: ', cur_y)
+            best_metric = f1_macro + f1_micro
             best_epoch = epoch + 1
 
         # save history step
@@ -618,7 +620,7 @@ if __name__ == "__main__":
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-    
+
     parser = argparse.ArgumentParser(description='Training Parameters')
     parser.add_argument('--mode', type=str, default='train') # or test
     parser.add_argument('--model_name', type=str, default='bert-base-cased') # or test
