@@ -9,6 +9,7 @@ import pandas as pd
 import random
 import re
 import torch
+import jieba.analyse
 
 from datasets import Dataset, load_dataset, concatenate_datasets
 from file_io import *
@@ -17,6 +18,8 @@ from nltk.tokenize import sent_tokenize
 from sklearn.metrics import f1_score, recall_score, precision_score
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, DataCollatorForSeq2Seq
 from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments
+
+from Myseq2seqTrainer import MyTrainer
 
 nltk.download("punkt")
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
@@ -46,6 +49,56 @@ def preprocess_function(sample, padding="max_length"):
     model_inputs["labels"] = labels["input_ids"]
     
     return model_inputs
+
+
+    # add prefix to the input for t5
+    inputs = [item for item in sample["text"]]
+
+    # generate counterfact texts
+    Mask_Token = '[MASK]'
+    fc_inputs = []
+    pc_inputs = []
+    for ori_text in inputs:        
+        ori_text = [word.strip() for word in ori_text.split(' ') if len(word.strip())>0]
+        keywords = jieba.analyse.extract_tags(ori_text, topK=999999999, withWeight=True)
+        keywords_map = {}
+        fc = []
+        pc = []        
+        for kws in keywords:
+            keywords_map[kws[0]] = kws[1]
+        for j in range(len(ori_text)):
+            fc.append(Mask_Token)
+            if ori_text[j] in keywords_map:
+                pc.append(Mask_Token)
+            else:
+                pc.append(ori_text[j])
+        fc_inputs.append(' '.join(fc))
+        pc_inputs.append(' '.join(pc))
+
+    # tokenize inputs
+    model_inputs = tokenizer(inputs, max_length=max_source_length, padding=padding, truncation=True)
+    fc_inputs = tokenizer(fc_inputs, max_length=max_source_length, padding=padding, truncation=True)
+    pc_inputs = tokenizer(pc_inputs, max_length=max_source_length, padding=padding, truncation=True)
+    
+    # tokenize labels
+    sample["label_id"] = [str(x) for x in sample["label_id"]]
+    labels = tokenizer(text_target=sample["label_id"], max_length=max_target_length, padding=padding, truncation=True)
+    
+  
+    # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
+    # padding in the loss. 
+    if padding == "max_length":
+        labels["input_ids"] = [
+            [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
+        ]
+
+    final_inputs = {}
+    final_inputs["model_inputs"] = model_inputs
+    final_inputs["fc_inputs"] = fc_inputs
+    final_inputs["pc_inputs"] = pc_inputs
+    final_inputs["labels"] = labels["input_ids"]
+    
+    return final_inputs
 
 # helper function to postprocess text
 def postprocess_text(preds, labels):
@@ -118,9 +171,7 @@ def compute_metrics(eval_preds):
     
     return result
 
-
-def train(train_set, val_set, test_set, tokenizer, model, model_name = 'facebook/bart-base', max_source_length = 64, max_target_length = 8, epochs = 40, batch_size = 4):
-    
+def train(train_set, val_set, test_set, tokenizer, model, model_name = 'facebook/bart-base', max_source_length = 64, max_target_length = 8, epochs = 40, batch_size = 4, best_x = 0.0, best_y = 0.0):
     # load dataset 
     '''train_set = datasets.load_dataset('json', data_files = 'dataset/train.json', split="train")
     test_set = datasets.load_dataset('json', data_files = 'dataset/test.json', split="train")
@@ -137,13 +188,13 @@ def train(train_set, val_set, test_set, tokenizer, model, model_name = 'facebook
     #dataset['test'] = dataset['test'].shuffle(seed=42).select(range(1000)) 
     #dataset['train'] = dataset['train'].shuffle(seed=42)
 
-    train_df = pd.DataFrame(train_set)
-    val_df = pd.DataFrame(val_set)
-    test_df = pd.DataFrame(test_set)
+    # train_df = pd.DataFrame(train_set)
+    # val_df = pd.DataFrame(val_set)
+    # test_df = pd.DataFrame(test_set)
 
     # The maximum total input sequence length after tokenization. 
     # Sequences longer than this will be truncated, sequences shorter will be padded.
-    tokenized_inputs = concatenate_datasets([train_set, test_set]).map(lambda x: tokenizer(x["text"], truncation=True), batched=True, remove_columns=['id', 'title', 'post', 'upvotes', 'emotions', 'date', 'text', 'label_id'])
+    # tokenized_inputs = concatenate_datasets([train_set, test_set]).map(lambda x: tokenizer(x["text"], truncation=True), batched=True, remove_columns=['id', 'title', 'post', 'upvotes', 'emotions', 'date', 'text', 'label_id'])
     print(f"Max source length: {max_source_length}")
 
     # The maximum total sequence length for target text after tokenization. 
@@ -183,6 +234,7 @@ def train(train_set, val_set, test_set, tokenizer, model, model_name = 'facebook
 
     # Hugging Face repository id
     repository_id = 'bart-base'
+
     # try:
     #     repository_id = f"{model_name.split('/')[1]}"
     # except:
@@ -218,7 +270,7 @@ def train(train_set, val_set, test_set, tokenizer, model, model_name = 'facebook
         )
 
     # create Trainer instance
-    trainer = Seq2SeqTrainer(
+    trainer = MyTrainer(
         model=model,
         args=training_args,
         data_collator=data_collator,
@@ -346,16 +398,22 @@ def main(args):
         model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name)
         model.to(device)
         
-        train(train_set, val_set, test_set, tokenizer, model, model_name = args.model_name, max_source_length = args.max_source_length, max_target_length = args.max_target_length, epochs = args.epochs, batch_size = args.batch_size)
+        train(train_set, val_set, test_set, tokenizer, model, model_name = args.model_name, max_source_length = args.max_source_length, max_target_length = args.max_target_length, epochs = args.epochs, batch_size = args.batch_size, best_x = args.best_x, best_y = args.best_y)
     
     elif (args.mode == 'test'):
         model = AutoModelForSeq2SeqLM.from_pretrained(args.model_path)
         model.to(device)
         model.eval()
-        test([], args.model_name, model, tokenizer, input_file = args.test_path, batch_size = args.test_batch_size, max_len = args.max_source_length, min_len = args.min_target_length)
+        test([], args.model_name, model, tokenizer, input_file = args.test_path, batch_size = args.test_batch_size, max_len = args.max_source_length, min_len = args.min_target_length, best_x = args.best_x, best_y = args.best_y)
 
 #...............................................................................            
 if __name__ == "__main__":
+
+    # fix random seed
+    seed = 42
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
     parser = argparse.ArgumentParser(description='Training Parameter')
     parser.add_argument('--mode', type=str, default='train') # or test
@@ -372,6 +430,9 @@ if __name__ == "__main__":
     
     parser.add_argument('--model_path', type=str, default='bart-base\checkpoint-452')
     parser.add_argument('--test_file', type=str, default='dataset/test.json')
+
+    parser.add_argument('--best_x', type=float, default=0.0)
+    parser.add_argument('--best_y', type=float, default=0.0)
   
     args = parser.parse_args()
 
