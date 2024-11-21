@@ -1,5 +1,6 @@
 import argparse
 import gc
+import os
 import jieba
 import jieba.analyse
 import matplotlib.pyplot as plt
@@ -10,6 +11,7 @@ import seaborn as sns
 import sys
 import torch
 import transformers
+import time
 
 from collections import defaultdict
 from file_io import *
@@ -583,6 +585,8 @@ def classifier_by_text(dataset):
 
 def main(args):
     if (args.mode == 'train'):
+        if not os.path.exists(args.resume_path):
+            os.makedirs(args.resume_path)
         train_set = read_list_from_jsonl_file(args.train_path)
         val_set = read_list_from_jsonl_file(args.val_path)
         test_set = read_list_from_jsonl_file(args.test_path)
@@ -594,8 +598,8 @@ def main(args):
         #print('class_names: ', class_names)
     
         train_model(train_set, val_set, class_names, pretrained_model = args.model_name,
-                     saved_model_file = 'best_bert_model.bin',
-                     saved_history_file = 'best_bert_model.json', epochs = args.epochs)
+                     saved_model_file = args.resume_path + '/best_bert_model.bin',
+                     saved_history_file = args.resume_path + '/best_bert_model.json', epochs = args.epochs)
     
     elif (args.mode == 'test'):
         
@@ -608,9 +612,9 @@ def main(args):
         class_names = sorted(list(set([item[0] for item in classifier_by_text(dataset)])), key = lambda x: x)
         class_names = [c.strip() for c in class_names if c.strip() != '']
         
-        test_dataset(test_set, class_names = class_names,
-                     pretrained_model = args.model_name, saved_model_file = 'best_bert_model.bin',
-                     saved_history_file = 'best_bert_model.json', max_len = args.max_length, batch_size = args.test_batch_size,
+        test_dataset(test_set, class_names = class_names, pretrained_model = args.model_name,\
+                     saved_model_file = args.resume_path + '/best_bert_model.bin', saved_history_file = args.resume_path + '/best_bert_model.json',
+                     max_len = args.max_length, batch_size = args.test_batch_size,
                      best_x = args.best_x, best_y = args.best_y)
 
 if __name__ == "__main__":
@@ -620,6 +624,8 @@ if __name__ == "__main__":
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+    
+    current_time = time.strftime("%Y%m%d%H%M%S")
 
     parser = argparse.ArgumentParser(description='Training Parameters')
     parser.add_argument('--mode', type=str, default='train') # or test
@@ -637,7 +643,7 @@ if __name__ == "__main__":
     parser.add_argument('--Beam_Search_Step', type=float, default=0.1)
     parser.add_argument('--best_x', type=float, default=0.0)
     parser.add_argument('--best_y', type=float, default=0.0)
-  
+    parser.add_argument('--resume_path', type=str, default='bert-base/'+current_time)
     args = parser.parse_args()
     
     label_list = symptom_list if "BDISen" in args.train_path else emotion_list
