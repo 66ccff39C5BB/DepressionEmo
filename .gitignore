@@ -2,4 +2,6 @@
 *.json
 logs/**
 bart-base*/**
+bert-base*/**
 __pycache__/**
+try.py

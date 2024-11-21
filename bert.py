@@ -32,6 +32,29 @@ symptom_list = ['Sadness', 'Pessimism', 'Sense_of_failure', 'Loss_of_Pleasure', 
 class PreparedDataset():
     def __init__(self, texts, categories, tokenizer, max_len):
         self.texts = texts
+        
+        self.fc_texts = []
+        self.pc_texts = []
+        Mask_Token = '[MASK]'
+        for ori_text in self.texts:
+            ori_text = [word.strip() for word in texts[0].split(' ') if len(word.strip())>0]
+            keywords = jieba.analyse.extract_tags(texts[0], topK=999999999, withWeight=True)
+            keywords_map = {}
+            fc = []
+            pc = []        
+            for kws in keywords:
+                keywords_map[kws[0]] = kws[1]
+            for j in range(len(ori_text)):
+                fc.append(Mask_Token)
+                if ori_text[j] in keywords_map:
+                    pc.append(Mask_Token)
+                else:
+                    pc.append(ori_text[j])
+            self.fc_texts.append(' '.join(fc))
+            self.pc_texts.append(' '.join(pc))
+        assert len(self.texts) == len(self.fc_texts)
+        assert len(self.fc_texts) == len(self.pc_texts)
+
         self.categories = categories
         self.tokenizer = tokenizer
         self.max_len = max_len
@@ -42,24 +65,7 @@ class PreparedDataset():
     def __getitem__(self, item):
         # add counterfactual_text code
         results = []
-        texts = [str(self.texts[item])]
-        ori_text = [word.strip() for word in texts[0].split(' ') if len(word.strip())>0]
-        Mask_Token = '[MASK]'
-        keywords = jieba.analyse.extract_tags(texts[0], topK=999999999, withWeight=True)
-        keywords_map = {}
-        fc = []
-        pc = []        
-        for kws in keywords:
-            keywords_map[kws[0]] = kws[1]
-        for j in range(len(ori_text)):
-            fc.append(Mask_Token)
-            if ori_text[j] in keywords_map:
-                pc.append(Mask_Token)
-            else:
-                pc.append(ori_text[j])
-        texts.append(' '.join(fc))
-        texts.append(' '.join(pc))
-
+        texts = [str(self.texts[item]), str(self.fc_texts[item]), str(self.pc_texts[item])]
 
         for text in texts:
             category = self.categories[item]
@@ -79,7 +85,7 @@ class PreparedDataset():
                     'text': text,
                     'input_ids': encoding['input_ids'].flatten(),
                     'attention_mask': encoding['attention_mask'].flatten(),
-                    'categories': torch.tensor(category, dtype=torch.long)
+                    'categories': torch.tensor(category, dtype=torch.float)
                 })
         return {
             'text': [result['text'] for result in results],
@@ -89,16 +95,19 @@ class PreparedDataset():
         }
 
 class CategoryClassifier(nn.Module):
-    def __init__(self, n_classes, pretrained_model = 'bert-base-cased'):
+    def __init__(self, n_labels, pretrained_model = 'bert-base-cased'):
         super(CategoryClassifier, self).__init__()
         self.bert = BertModel.from_pretrained(pretrained_model)
         self.drop = nn.Dropout(p=0.1)
-        self.out = nn.Linear(self.bert.config.hidden_size, n_classes)
+        self.out = nn.Linear(self.bert.config.hidden_size, n_labels)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, input_ids, attention_mask, return_dict=False):
         _, pooled_output = self.bert(input_ids=input_ids, attention_mask=attention_mask, return_dict=return_dict)
         output = self.drop(pooled_output)
-        return self.out(output)
+        output = self.out(output)
+        output = self.sigmoid(output)
+        return output
 
 def search_index(type_list, class_names):
 
@@ -115,15 +124,16 @@ def search_index(type_list, class_names):
 
     return -1
 
-def create_data_loader(dataset, tokenizer, class_names, max_len, batch_size):
+def create_data_loader(dataset, tokenizer, label_names, max_len, batch_size):
 
     texts, categories = [], []
  
     for item in dataset:
-        item_classifier = [str(item['label_id'])]
-        index = search_index(item_classifier, class_names)
-        if (index == -1): continue
-        categories.append(index)
+        item_classifier = str(item['label_id'])
+        while len(item_classifier) < len(label_names): item_classifier = '0' + item_classifier
+        label = [int(x) for x in item_classifier]
+        assert len(label) == len(label_names)
+        categories.append(label)
         texts.append(item['text'])
     
     #print('categories: ', categories)
@@ -134,14 +144,14 @@ def create_data_loader(dataset, tokenizer, class_names, max_len, batch_size):
     return DataLoader(ds, batch_size=batch_size, num_workers=4)
 
 
-def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_examples, class_names, cur_x = 0, cur_y = 0):
+def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_examples, cur_threshold, cur_x = 0, cur_y = 0):
 
     model = model.train()
     losses = []
-    correct_predictions = 0
     i = 0
     pred_list = []
     true_list = []
+    cur_threshold = torch.tensor(cur_threshold).to(device)
     
     for d in data_loader:
         
@@ -165,9 +175,9 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
             input_ids_pc = d["input_ids"][2].to(device)
             attention_mask_pc = d["attention_mask"][2].to(device)
             outputs_pc = model(input_ids=input_ids_pc, attention_mask=attention_mask_pc)
-        _, preds = torch.max(outputs - cur_x * outputs_fc - cur_y * outputs_pc, dim=1)
+        preds = ((outputs - cur_x * outputs_fc - cur_y * outputs_pc) > cur_threshold).to(torch.float)
+
         
-        correct_predictions += torch.sum(preds == categories)
         losses.append(loss.item())
         pred_list.append(preds.tolist())
         true_list.append(categories.tolist())
@@ -177,18 +187,10 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad()
-        
+
+
     pred_list = sum(pred_list, [])
     true_list = sum(true_list, [])
-    
-    pred_list = [class_names[c] for c in pred_list]
-    true_list = [class_names[c] for c in true_list]
-    
-    pred_list = convert_labels(pred_list)
-    true_list = convert_labels(true_list)
-    
-    #print('pred_list: ', pred_list)
-    #print('true_list: ', true_list)
     
     f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
     re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
@@ -211,24 +213,8 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
         
     #return correct_predictions.double() / n_examples, np.mean(losses)
 
-
-def convert_labels(labels):
-    labels2 = []
-    for idx, label in enumerate(labels):
-        
-        temp = []
-        num = len(label_list) - len(label)
-        if (num == 0): 
-            temp = [int(x) for x in label]
-        else:
-            temp = ''.join(['0']*num) + str(label)   
-            temp = [int(x) for x in temp]
-            
-        labels2.append(temp)
-        
-    return labels2
-    
-def eval_model(model, data_loader, loss_fn, device, n_examples, class_names):
+ 
+def eval_model(model, data_loader, loss_fn, device, n_examples):
     model = model.eval()
 
     outputs = []
@@ -247,6 +233,8 @@ def eval_model(model, data_loader, loss_fn, device, n_examples, class_names):
             true_classes.append(categories)
 
 
+    best_threshold = [0.5 for _ in label_list]
+    best_threshold = torch.tensor(best_threshold).to(device)
     Dirs = [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0]]
     best_x, best_y, cmaf1_map = 0.0, 0.0, {}
 
@@ -262,12 +250,15 @@ def eval_model(model, data_loader, loss_fn, device, n_examples, class_names):
                 key = '{:.2f}_{:.2f}'.format(cur_x, cur_y)
                 if key not in cmaf1_map.keys():
 
+                    # not search the best threshold in this version
+                    cur_threshold = best_threshold.clone().detach()
+
                     losses = []    
                     pred_list = []
                     true_list = []
                     
                     for o, o_fc, o_pc, categories in zip(outputs, outputs_fc, outputs_pc, true_classes):
-                        _, preds = torch.max(o - cur_x * o_fc - cur_y * o_pc, dim=1)
+                        preds = ((o - cur_x * o_fc - cur_y * o_pc) > cur_threshold).to(torch.float)
 
                         loss = loss_fn(o - cur_x * o_fc - cur_y * o_pc, categories)
                         pred_list.append(preds.tolist())
@@ -276,12 +267,6 @@ def eval_model(model, data_loader, loss_fn, device, n_examples, class_names):
         
                     pred_list = sum(pred_list, [])
                     true_list = sum(true_list, [])
-                    
-                    pred_list = [class_names[c] for c in pred_list]
-                    true_list = [class_names[c] for c in true_list]
-                    
-                    pred_list = convert_labels(pred_list)
-                    true_list = convert_labels(true_list)
                     
                     f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
                     re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
@@ -294,7 +279,8 @@ def eval_model(model, data_loader, loss_fn, device, n_examples, class_names):
 
                     cmaf1_map[key] = f1_mac
                 f1_mac = cmaf1_map[key]
-                if f1_mac > best_dev_cmaf1:
+                if f1_mac + f1_mi > best_dev_cmaf1 + best_dev_cmif1:
+                    best_threshold = cur_threshold.clone().detach()
                     best_x, best_y, step = cur_x, cur_y, 0
                     best_dev_cmaf1, best_dev_cmarec, best_dev_cmapre = f1_mac, re_mac, pre_mac
                     best_dev_cmif1, best_dev_cmirec, best_dev_cmipre = f1_mi, re_mi, pre_mi
@@ -316,17 +302,19 @@ def eval_model(model, data_loader, loss_fn, device, n_examples, class_names):
     result['recall_macro'] = best_dev_cmarec
     result['precision_macro'] = best_dev_cmapre
 
+    result['best_threshold'] = best_threshold.tolist()
     result['best_x'] = best_x
     result['best_y'] = best_y
 
     return result, best_mean_loss
 
-def get_predictions(model, data_loader, best_x, best_y):
+def get_predictions(model, data_loader, best_x, best_y, best_threshold):
     model = model.eval()
     sentences = []
     predictions = []
     prediction_probs = []
     real_values = []
+    best_threshold = torch.tensor(best_threshold).to(device)
 
     with torch.no_grad():
         for d in data_loader:
@@ -337,8 +325,7 @@ def get_predictions(model, data_loader, best_x, best_y):
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
             outputs_fc = model(input_ids=d["input_ids"][1].to(device), attention_mask=d["attention_mask"][1].to(device))
             outputs_pc = model(input_ids=d["input_ids"][2].to(device), attention_mask=d["attention_mask"][2].to(device))
-            # _, preds = torch.max(outputs, dim=1)
-            _, preds = torch.max(outputs - best_x * outputs_fc - best_y * outputs_pc, dim=1)
+            preds = ((outputs - best_x * outputs_fc - best_y * outputs_pc) > best_threshold).to(torch.float)
             sentences.extend(texts)
             predictions.extend(preds)
             prediction_probs.extend(outputs - best_x * outputs_fc - best_y * outputs_pc)
@@ -350,18 +337,19 @@ def get_predictions(model, data_loader, best_x, best_y):
     return sentences, predictions, prediction_probs, real_values
 
 
-def train_model(train_set, val_set, class_names = [], pretrained_model = 'bert-base-cased', 
-                saved_model_file = 'best_model_state.bin', saved_history_file = 'history_file.json', epochs = 40, max_len = 256, batch_size = 8):
+def train_model(train_set, val_set, pretrained_model = 'bert-base-cased', 
+                saved_model_file = 'best_model_state.bin', saved_history_file = 'history_file.json', saved_best_threshold = 'best_threshold.json',
+                epochs = 40, max_len = 256, batch_size = 8):
 
     # prepare dataset
     tokenizer = BertTokenizer.from_pretrained(pretrained_model)
 
-    train_data_loader = create_data_loader(train_set, tokenizer, class_names, max_len, batch_size)
-    val_data_loader = create_data_loader(val_set, tokenizer, class_names, max_len, batch_size)
+    train_data_loader = create_data_loader(train_set, tokenizer, label_list, max_len, batch_size)
+    val_data_loader = create_data_loader(val_set, tokenizer, label_list, max_len, batch_size)
     #test_data_loader = create_data_loader(df_test, tokenizer, class_names, max_len, batch_size)
 
     # create model
-    model = CategoryClassifier(len(class_names), pretrained_model)
+    model = CategoryClassifier(len(label_list), pretrained_model)
     model = model.to(device)
 
     # data = next(iter(train_data_loader))
@@ -384,20 +372,22 @@ def train_model(train_set, val_set, class_names = [], pretrained_model = 'bert-b
     best_epoch = -1
     write_single_dict_to_json_file(saved_history_file, {}, "w")
     cur_x, cur_y = 0.0, 0.0
+    cur_threshold = [0.5 for _ in label_list]
     
     for epoch in range(epochs):
         print('-' * 50)
         print(f'Epoch {epoch + 1}/{epochs}')
         
 
-        train_result, train_loss = train_epoch(model, train_data_loader, loss_fn, optimizer, device, scheduler, len(train_set), class_names, cur_x, cur_y)
+        train_result, train_loss = train_epoch(model, train_data_loader, loss_fn, optimizer, device, scheduler, len(train_set), cur_threshold = cur_threshold, cur_x=cur_x, cur_y=cur_y)
         train_f1_macro = train_result['f1_macro']
         print(f'Train loss: {train_loss}, Train f1 macro: {train_f1_macro}')
         
-        val_result, val_loss = eval_model(model, val_data_loader, loss_fn, device, len(val_set), class_names)
+        val_result, val_loss = eval_model(model, val_data_loader, loss_fn, device, len(val_set))
 
         cur_x = val_result['best_x']
         cur_y = val_result['best_y']
+        cur_threshold = val_result['best_threshold']
         
         f1_macro = val_result['f1_macro']
         f1_micro = val_result['f1_micro']
@@ -410,6 +400,7 @@ def train_model(train_set, val_set, class_names = [], pretrained_model = 'bert-b
       
         if f1_macro + f1_micro > best_metric:
             torch.save(model.state_dict(), saved_model_file)
+            json.dump(cur_threshold, open(saved_best_threshold, 'w+'))
             print('Model saved. Best x: ', cur_x, ' Best y: ', cur_y)
             best_metric = f1_macro + f1_micro
             best_epoch = epoch + 1
@@ -433,31 +424,27 @@ def train_model(train_set, val_set, class_names = [], pretrained_model = 'bert-b
         print('-' * 50)
     
  
-def test_dataset(test_set, class_names = [],
-                     pretrained_model = 'bert-base-cased', saved_model_file = 'best_bert_model.bin',
+def test_dataset(test_set, 
+                     pretrained_model = 'bert-base-cased', saved_model_file = 'best_bert_model.bin', saved_best_threshold = 'best_threshold.json',
                      saved_history_file = 'best_bert_model.json', max_len = 256, batch_size = 8, best_x = 0.0, best_y = 0.0):
     
     tokenizer = BertTokenizer.from_pretrained(pretrained_model)
+    best_threshold = json.load(open(saved_best_threshold, 'r'))
 
     #train_data_loader = create_data_loader(train_set, tokenizer, class_names, max_len, batch_size)
     #val_data_loader = create_data_loader(val_set, tokenizer, class_names, max_len, batch_size)
-    test_data_loader = create_data_loader(test_set, tokenizer, class_names, max_len, batch_size)
+    test_data_loader = create_data_loader(test_set, tokenizer, label_list, max_len, batch_size)
 
     loss_fn = nn.CrossEntropyLoss().to(device)
 
-    model = CategoryClassifier(len(class_names), pretrained_model)
+    model = CategoryClassifier(len(label_list), pretrained_model)
     model.load_state_dict(torch.load(saved_model_file))
     model = model.to(device)
     
-    texts, pred_list, pred_probs, true_list = get_predictions(model, test_data_loader, 0, 0)
+    texts, pred_list, pred_probs, true_list = get_predictions(model, test_data_loader, 0, 0, best_threshold)
    
     pred_list = pred_list.tolist()
     true_list = true_list.tolist()
-    pred_list = [class_names[c] for c in pred_list]
-    true_list = [class_names[c] for c in true_list]
-    
-    pred_list = convert_labels(pred_list)
-    true_list = convert_labels(true_list)
     
     f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
     re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
@@ -478,15 +465,10 @@ def test_dataset(test_set, class_names = [],
     
     print('Original result: ', ori_result)
 
-    texts, pred_list, pred_probs, true_list = get_predictions(model, test_data_loader, best_x, best_y)
+    texts, pred_list, pred_probs, true_list = get_predictions(model, test_data_loader, best_x, best_y, best_threshold)
    
     pred_list = pred_list.tolist()
     true_list = true_list.tolist()
-    pred_list = [class_names[c] for c in pred_list]
-    true_list = [class_names[c] for c in true_list]
-    
-    pred_list = convert_labels(pred_list)
-    true_list = convert_labels(true_list)
     
     f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
     re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
@@ -592,14 +574,12 @@ def main(args):
         test_set = read_list_from_jsonl_file(args.test_path)
     
         dataset = train_set + val_set + test_set # capture all labels
-
-        class_names = sorted(list(set([item[0] for item in classifier_by_text(dataset)])), key = lambda x: x)
-        class_names = [c.strip() for c in class_names if c.strip() != '']
         #print('class_names: ', class_names)
     
-        train_model(train_set, val_set, class_names, pretrained_model = args.model_name,
+        train_model(train_set, val_set, pretrained_model = args.model_name,
                      saved_model_file = args.resume_path + '/best_bert_model.bin',
-                     saved_history_file = args.resume_path + '/best_bert_model.json', epochs = args.epochs)
+                     saved_history_file = args.resume_path + '/best_bert_model.json',
+                     saved_best_threshold = args.resume_path + '/best_threshold.json', epochs = args.epochs)
     
     elif (args.mode == 'test'):
         
@@ -608,12 +588,11 @@ def main(args):
         test_set = read_list_from_jsonl_file(args.test_path)
     
         dataset = train_set + val_set + test_set # capture all labels
-
-        class_names = sorted(list(set([item[0] for item in classifier_by_text(dataset)])), key = lambda x: x)
-        class_names = [c.strip() for c in class_names if c.strip() != '']
         
-        test_dataset(test_set, class_names = class_names, pretrained_model = args.model_name,\
-                     saved_model_file = args.resume_path + '/best_bert_model.bin', saved_history_file = args.resume_path + '/best_bert_model.json',
+        test_dataset(test_set, pretrained_model = args.model_name,\
+                     saved_model_file = args.resume_path + '/best_bert_model.bin',
+                     saved_history_file = args.resume_path + '/best_bert_model.json',
+                     saved_best_threshold = args.resume_path + '/best_threshold.json',
                      max_len = args.max_length, batch_size = args.test_batch_size,
                      best_x = args.best_x, best_y = args.best_y)
 
@@ -641,6 +620,7 @@ if __name__ == "__main__":
     parser.add_argument('--test_file', type=str, default='dataset/test.json')
     parser.add_argument('--Beam_Search_Range', type=int, default=20)
     parser.add_argument('--Beam_Search_Step', type=float, default=0.1)
+
     parser.add_argument('--best_x', type=float, default=0.0)
     parser.add_argument('--best_y', type=float, default=0.0)
     parser.add_argument('--resume_path', type=str, default='bert-base/'+current_time)
@@ -652,4 +632,4 @@ if __name__ == "__main__":
     
 # python bert.py  --mode "train" --model_name "/data1/lipengfei/basemodels/bert-base-uncased" --epochs 25 --batch_size 8 --max_length 256 --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json"
 
-# python bert.py --mode "test" --model_name "/data1/lipengfei/basemodels/bert-base-uncased" --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json" --max_length 256 --test_batch_size 16
+# python bert.py --mode "test" --model_name "/data1/lipengfei/basemodels/bert-base-uncased" --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json" --max_length 256 --test_batch_size 16 --best_x -0.5 --best_y 0.0 --resume_path "bert-base/20241121203151"
