@@ -3,6 +3,7 @@
 logs/**
 bart-base*/**
 bert-base*/**
+xgb*/**
 __pycache__/**
 try.py
 *.sh
