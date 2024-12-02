@@ -82,6 +82,9 @@ predictions = np.concatenate(predictions, axis=0)
 
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
 
+y_test = np.transpose(y_test)
+predictions = np.transpose(predictions)
+
 f1_mi = f1_score(y_true=y_test, y_pred=predictions, average='micro')
 re_mi = recall_score(y_true=y_test, y_pred=predictions, average='micro')
 pre_mi = precision_score(y_true=y_test, y_pred=predictions, average='micro')
