@@ -5,3 +5,4 @@ bart-base*/**
 bert-base*/**
 __pycache__/**
 try.py
+*.sh

@@ -483,25 +483,12 @@ def main(args):
                      saved_history_file = args.resume_path + '/best_bert_model.json',
                      saved_best_threshold = args.resume_path + '/best_threshold.json', epochs = args.epochs)
         
-        test_dataset(test_set, pretrained_model = args.model_name,
-                     saved_model_file = args.resume_path + '/best_bert_model.bin',
-                     saved_history_file = args.resume_path + '/best_bert_model.json',
-                     saved_best_threshold = args.resume_path + '/best_threshold.json',
-                     max_len = args.max_length, batch_size = args.test_batch_size)
-    
-    elif (args.mode == 'test'):
-        
-        train_set = read_list_from_jsonl_file(args.train_path)
-        val_set = read_list_from_jsonl_file(args.val_path)
-        test_set = read_list_from_jsonl_file(args.test_path)
-    
-        dataset = train_set + val_set + test_set # capture all labels
-        
-        test_dataset(test_set, pretrained_model = args.model_name,\
-                     saved_model_file = args.resume_path + '/best_bert_model.bin',
-                     saved_history_file = args.resume_path + '/best_bert_model.json',
-                     saved_best_threshold = args.resume_path + '/best_threshold.json',
-                     max_len = args.max_length, batch_size = args.test_batch_size)
+    test_dataset(test_set, pretrained_model = args.model_name,
+                    saved_model_file = args.resume_path + '/best_bert_model.bin',
+                    saved_history_file = args.resume_path + '/best_bert_model.json',
+                    saved_best_threshold = args.resume_path + '/best_threshold.json',
+                    max_len = args.max_length, batch_size = args.test_batch_size)
+
 
 if __name__ == "__main__":
 
