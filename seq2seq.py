@@ -1,4 +1,5 @@
 import argparse
+import time
 import datasets
 import glob
 import matplotlib.pyplot as plt
@@ -23,6 +24,7 @@ device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('
 print('CUDA: ', torch.cuda.is_available())
 
 emotion_list = ['anger', 'brain dysfunction (forget)', 'emptiness', 'hopelessness', 'loneliness', 'sadness', 'suicide intent', 'worthlessness']
+symptom_list = ['Sadness', 'Pessimism', 'Sense_of_failure', 'Loss_of_Pleasure', 'Guilty_feelings', 'Sense_of_punishment', 'Self-dislike', 'Self-incrimination', 'Suicidal_ideas', 'Crying', 'Agitation', 'Social_withdrawal', 'Indecision', 'Feelings_of_worthlessness', 'Loss_of_energy', 'Change_of_sleep', 'Irritability', 'Changes_in_appetite', 'Concentration_difficulty', 'Tiredness_or_fatigue', 'Loss_of_interest_in_sex']
 
 def preprocess_function(sample, padding="max_length"):
     # add prefix to the input for t5
@@ -82,8 +84,8 @@ def compute_metrics(eval_preds):
     #print('decoded_labels: ', decoded_labels[0])
     
     decoded_labels = [[int(y) if y in digits else 0 for y in x] for x in decoded_labels]
-    decoded_labels = [[0]*(len(emotion_list)-len(x)) + x for x in decoded_labels] # if generate not enough
-    decoded_labels = [x[0:len(emotion_list)] for x in decoded_labels]
+    decoded_labels = [[0]*(len(label_list)-len(x)) + x for x in decoded_labels] # if generate not enough
+    decoded_labels = [x[0:len(label_list)] for x in decoded_labels]
     decoded_labels = [[0 if y == 0 else 1 for y in x] for x in decoded_labels]
     #print('decoded_labels: ', decoded_labels[0])
     
@@ -91,8 +93,8 @@ def compute_metrics(eval_preds):
     #decoded_preds = [x.replace(' ', '') for x in decoded_preds] # remove spaces
     decoded_preds = [[int(y) if y in digits else 0 for y in x] for x in decoded_preds]
     
-    decoded_preds = [[0]*(len(emotion_list)-len(x)) + x for x in decoded_preds] # if generate not enough
-    decoded_preds = [x[0:len(emotion_list)] for x in decoded_preds]
+    decoded_preds = [[0]*(len(label_list)-len(x)) + x for x in decoded_preds] # if generate not enough
+    decoded_preds = [x[0:len(label_list)] for x in decoded_preds]
     decoded_preds = [[0 if y == 0 else 1 for y in x] for x in decoded_preds]
     #print('decoded_preds: ', decoded_preds[0])
     
@@ -119,57 +121,38 @@ def compute_metrics(eval_preds):
     return result
 
 
-def train(train_set, val_set, test_set, tokenizer, model, model_name = 'facebook/bart-base', max_source_length = 64, max_target_length = 8, epochs = 40, batch_size = 4):
+def train(train_set, val_set, test_set, tokenizer, model, model_name = 'facebook/bart-base', max_source_length = 64, max_target_length = 8, epochs = 40, batch_size = 4, model_path = 'bart-base'):
     
     # load dataset 
-    '''train_set = datasets.load_dataset('json', data_files = 'dataset/train.json', split="train")
-    test_set = datasets.load_dataset('json', data_files = 'dataset/test.json', split="train")
-    val_set = datasets.load_dataset('json', data_files = 'dataset/val.json', split="train")
-
-    print(f"Train dataset size: {len(train_set)}")
-    print(f"Test dataset size: {len(test_set)}")
-    print(f"Val dataset size: {len(val_set)}")'''
-
-    # Load tokenizer
-    #tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    #dataset['train'] = dataset['train'].shuffle(seed=42).select(range(2000)) 
-    #dataset['test'] = dataset['test'].shuffle(seed=42).select(range(1000)) 
-    #dataset['train'] = dataset['train'].shuffle(seed=42)
-
-    train_df = pd.DataFrame(train_set)
-    val_df = pd.DataFrame(val_set)
-    test_df = pd.DataFrame(test_set)
 
     # The maximum total input sequence length after tokenization. 
     # Sequences longer than this will be truncated, sequences shorter will be padded.
-    tokenized_inputs = concatenate_datasets([train_set, test_set]).map(lambda x: tokenizer(x["text"], truncation=True), batched=True, remove_columns=['id', 'title', 'post', 'upvotes', 'emotions', 'date', 'text', 'label_id'])
-    print(f"Max source length: {max_source_length}")
+    if len(label_list) == len(emotion_list):
+        print(f"Max source length: {max_source_length}")
 
-    # The maximum total sequence length for target text after tokenization. 
-    # Sequences longer than this will be truncated, sequences shorter will be padded."
-    tokenized_targets = concatenate_datasets([train_set, test_set]).map(lambda x: tokenizer(str(x["label_id"]), truncation=True), batched=True, remove_columns=['id', 'title', 'post', 'upvotes', 'emotions', 'date', 'text', 'label_id'])
+        # The maximum total sequence length for target text after tokenization. 
+        # Sequences longer than this will be truncated, sequences shorter will be padded."
+        tokenized_targets = concatenate_datasets([train_set, test_set]).map(lambda x: tokenizer(str(x["label_id"]), truncation=True), batched=True, remove_columns=['id', 'title', 'post', 'upvotes', 'emotions', 'date', 'text', 'label_id'])
 
-    #max_target_length = max([len(str(x)) for x in tokenized_targets["input_ids"]])
+        #max_target_length = max([len(str(x)) for x in tokenized_targets["input_ids"]])
 
-    print('Tokenized targets: ', tokenized_targets)
-    print(f"Max target length: {max_target_length}")
+        print('Tokenized targets: ', tokenized_targets)
+        print(f"Max target length: {max_target_length}")
 
-    tokenized_train_dataset = train_set.map(preprocess_function, batched=True, remove_columns=['id', 'title', 'post', 'upvotes', 'emotions', 'date', 'text', 'label_id'])
-    print(f"Keys of tokenized dataset: {list(tokenized_train_dataset.features)}")
+        tokenized_train_dataset = train_set.map(preprocess_function, batched=True, remove_columns=['id', 'title', 'post', 'upvotes', 'emotions', 'date', 'text', 'label_id'])
+        print(f"Keys of tokenized dataset: {list(tokenized_train_dataset.features)}")
 
-    tokenized_val_dataset = val_set.map(preprocess_function, batched=True, remove_columns=['id', 'title', 'post', 'upvotes', 'emotions', 'date', 'text', 'label_id'])
-    print(f"Keys of tokenized dataset: {list(tokenized_val_dataset.features)}")
+        tokenized_val_dataset = val_set.map(preprocess_function, batched=True, remove_columns=['id', 'title', 'post', 'upvotes', 'emotions', 'date', 'text', 'label_id'])
+        print(f"Keys of tokenized dataset: {list(tokenized_val_dataset.features)}")
     
-    # load model from the hub
-    #model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-    #model = model.to(device)
-
-    # # Metric
-    # metric_f1 = evaluate.load("f1")
-    # metric_pre = evaluate.load("precision")
-    # metric_re = evaluate.load("recall")
-    # metric_rouge = evaluate.load("rouge")
+    else:
+        tokenized_targets  = concatenate_datasets([train_set, test_set]).map(lambda x: tokenizer(str(x["label_id"]), truncation=True), batched=True, remove_columns=["text", "symptoms", "label_id"])
+        print('Tokenized targets: ', tokenized_targets)
+        print(f"Max target length: {max_target_length}")
+        tokenized_train_dataset = train_set.map(preprocess_function, batched=True, remove_columns=["text", "symptoms", "label_id"])
+        print(f"Keys of tokenized dataset: {list(tokenized_train_dataset.features)}")
+        tokenized_val_dataset = val_set.map(preprocess_function, batched=True, remove_columns=["text", "symptoms", "label_id"])
+        print(f"Keys of tokenized dataset: {list(tokenized_val_dataset.features)}")
 
     # we want to ignore tokenizer pad token in the loss
     label_pad_token_id = -100
@@ -182,7 +165,7 @@ def train(train_set, val_set, test_set, tokenizer, model, model_name = 'facebook
         )
 
     # Hugging Face repository id
-    repository_id = 'bart-base'
+    repository_id = model_path+'/'
     # try:
     #     repository_id = f"{model_name.split('/')[1]}"
     # except:
@@ -267,29 +250,29 @@ def test(dataset, model_name, model, tokenizer, input_file = 'dataset/test.json'
 
     pred_list = [[x for x in pred][0].strip() for pred in pred_list] # use strip() to remove spaces
     
-    label_list = [str(item['label_id']) for item in dataset]
+    label_id_list = [str(item['label_id']) for item in dataset]
     
     digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
     # ['hola' if i == 1 else '' for i in list_num]
-    label_list = [[int(y) if y in digits else 0 for y in x] for x in label_list]
-    label_list = [[0]*(len(emotion_list)-len(x)) + x for x in label_list] # if generate not enough
-    label_list = [x[0:len(emotion_list)] for x in label_list]
-    label_list = [[0 if y == 0 else 1 for y in x] for x in label_list]
-    print('label_list: ', label_list)
+    label_id_list = [[int(y) if y in digits else 0 for y in x] for x in label_id_list]
+    label_id_list = [[0]*(len(label_id_list)-len(x)) + x for x in label_id_list] # if generate not enough
+    label_id_list = [x[0:len(label_id_list)] for x in label_id_list]
+    label_id_list = [[0 if y == 0 else 1 for y in x] for x in label_id_list]
+    # print('label_list: ', label_list)
     
     pred_list = [[int(y) if y in digits else 0 for y in x] for x in pred_list]
-    pred_list = [[0]*(len(emotion_list)-len(x)) + x for x in pred_list] # if generate not enough
-    pred_list = [x[0:len(emotion_list)] for x in pred_list]
+    pred_list = [[0]*(len(label_id_list)-len(x)) + x for x in pred_list] # if generate not enough
+    pred_list = [x[0:len(label_id_list)] for x in pred_list]
     pred_list = [[0 if y == 0 else 1 for y in x] for x in pred_list]
-    print('pred_list: ', pred_list)
+    # print('pred_list: ', pred_list)
     
-    f1_mi = f1_score(y_true=label_list, y_pred=pred_list, average='micro')
-    re_mi = recall_score(y_true=label_list, y_pred=pred_list, average='micro')
-    pre_mi = precision_score(y_true=label_list, y_pred=pred_list, average='micro')
+    f1_mi = f1_score(y_true=label_id_list, y_pred=pred_list, average='micro')
+    re_mi = recall_score(y_true=label_id_list, y_pred=pred_list, average='micro')
+    pre_mi = precision_score(y_true=label_id_list, y_pred=pred_list, average='micro')
     
-    f1_mac = f1_score(y_true=label_list, y_pred=pred_list, average='macro')
-    re_mac = recall_score(y_true=label_list, y_pred=pred_list, average='macro')
-    pre_mac = precision_score(y_true=label_list, y_pred=pred_list, average='macro')
+    f1_mac = f1_score(y_true=label_id_list, y_pred=pred_list, average='macro')
+    re_mac = recall_score(y_true=label_id_list, y_pred=pred_list, average='macro')
+    pre_mac = precision_score(y_true=label_id_list, y_pred=pred_list, average='macro')
     
     result = {}
     result['f1_micro'] = f1_mi
@@ -304,11 +287,11 @@ def test(dataset, model_name, model, tokenizer, input_file = 'dataset/test.json'
     print(str(round(f1_mac, 2)) + ' & ' + str(round(pre_mac, 2)) + ' & ' + str(round(re_mac, 2)) + ' & ' + str(round(f1_mi, 2)) + ' & ' + str(round(pre_mi, 2)) + ' & ' + str(round(re_mi, 2)))
     print('----------------------------------------')
     
-    for index, emotion in enumerate(emotion_list):
+    for index, emotion in enumerate(label_list):
     
         print('emotion: ', emotion)
         
-        temp_label_list = [x[index] for x in label_list]
+        temp_label_list = [x[index] for x in label_id_list]
         temp_pred_list = [x[index] for x in pred_list]
         
         f1_mi = f1_score(y_true=temp_label_list, y_pred=temp_pred_list, average='micro')
@@ -334,6 +317,8 @@ def test(dataset, model_name, model, tokenizer, input_file = 'dataset/test.json'
     return result
 
 def main(args):
+    if not os.path.exists(args.model_path):
+        os.makedirs(args.model_path)
     if (args.mode == 'train'):
         train_set = datasets.load_dataset('json', data_files = args.train_path, split="train")
         test_set = datasets.load_dataset('json', data_files = args.test_path, split="train")
@@ -346,17 +331,28 @@ def main(args):
         model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name)
         model.to(device)
         
-        train(train_set, val_set, test_set, tokenizer, model, model_name = args.model_name, max_source_length = args.max_source_length, max_target_length = args.max_target_length, epochs = args.epochs, batch_size = args.batch_size)
-    
-    elif (args.mode == 'test'):
-        model = AutoModelForSeq2SeqLM.from_pretrained(args.model_path)
-        model.to(device)
-        model.eval()
-        test([], args.model_name, model, tokenizer, input_file = args.test_path, batch_size = args.test_batch_size, max_len = args.max_source_length, min_len = args.min_target_length)
+        train(train_set, val_set, test_set, tokenizer, model, model_name = args.model_name, max_source_length = args.max_source_length, max_target_length = max_target_length, epochs = args.epochs, batch_size = args.batch_size, model_path = args.model_path)
+
+    model_path = ''
+    for dirname in os.listdir(args.model_path):
+        model_path = os.path.join(args.model_path, dirname)
+        if "checkpoint" in model_path:
+            print('model_path: ', model_path)
+            model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
+            model.to(device)
+            model.eval()
+            test([], args.model_name, model, tokenizer, input_file = args.test_path, batch_size = args.test_batch_size, max_len = args.max_source_length, min_len = args.min_target_length)
 
 #...............................................................................            
 if __name__ == "__main__":
 
+    #fix random seed
+    seed = 42
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    
+    current_time = time.strftime("%Y%m%d%H%M%S")
     parser = argparse.ArgumentParser(description='Training Parameter')
     parser.add_argument('--mode', type=str, default='train') # or test
     parser.add_argument('--model_name', type=str, default='facebook/bart-base') # or test
@@ -367,10 +363,9 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--test_batch_size', type=int, default=16)
     parser.add_argument('--max_source_length', type=int, default=256)
-    parser.add_argument('--max_target_length', type=int, default=8)
     parser.add_argument('--min_target_length', type=int, default=1)
     
-    parser.add_argument('--model_path', type=str, default='bart-base\checkpoint-452')
+    parser.add_argument('--model_path', type=str, default='bart-base/'+current_time)
     parser.add_argument('--test_file', type=str, default='dataset/test.json')
   
     args = parser.parse_args()
@@ -382,12 +377,14 @@ if __name__ == "__main__":
     max_source_length = args.max_source_length
     
     global max_target_length
-    max_target_length = args.max_target_length
+    label_list = symptom_list if "BDISen" in args.test_path else emotion_list
+    max_target_length = len(label_list)
+
     
     main(args)
     
 # python seq2seq.py --mode "train" --model_name "/data1/lipengfei/basemodels/bart-base" --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json" --epochs 25 --batch_size 4 --max_source_length 256
 
-# python seq2seq.py --mode "test" --model_name "/data1/lipengfei/basemodels/bart-base" --model_path "bart-base\model_checkpoint_xxx" --test_path "Dataset/test.json" --test_batch_size 4 --max_source_length 256 --min_target_length 1
+# python seq2seq.py --mode "test" --model_name "/data1/lipengfei/basemodels/bart-base" --model_path "bart-base/20241128212612" --test_path "Dataset/test.json" --test_batch_size 4 --max_source_length 256 --min_target_length 1
 
         
