@@ -468,16 +468,13 @@ def classifier_by_text(dataset):
     return type_dict
 
 def main(args):
+    train_set = read_list_from_jsonl_file(args.train_path)
+    val_set = read_list_from_jsonl_file(args.val_path)
+    test_set = read_list_from_jsonl_file(args.test_path)
+    
     if (args.mode == 'train'):
         if not os.path.exists(args.resume_path):
-            os.makedirs(args.resume_path)
-        train_set = read_list_from_jsonl_file(args.train_path)
-        val_set = read_list_from_jsonl_file(args.val_path)
-        test_set = read_list_from_jsonl_file(args.test_path)
-    
-        dataset = train_set + val_set + test_set # capture all labels
-        #print('class_names: ', class_names)
-    
+            os.makedirs(args.resume_path)    
         train_model(train_set, val_set, pretrained_model = args.model_name, max_len = args.max_length, batch_size = args.batch_size,
                      saved_model_file = args.resume_path + '/best_bert_model.bin',
                      saved_history_file = args.resume_path + '/best_bert_model.json',
@@ -518,7 +515,7 @@ if __name__ == "__main__":
     
     print('args: ', args)
 
-    label_list = symptom_list if "BDISen" in args.train_path else emotion_list
+    label_list = symptom_list if "BDISen" in args.test_path else emotion_list
 
     main(args)
     
