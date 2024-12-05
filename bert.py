@@ -12,6 +12,7 @@ import sys
 import torch
 import transformers
 import time
+import wandb
 
 from collections import defaultdict
 from file_io import *
@@ -318,6 +319,7 @@ def train_model(train_set, val_set, pretrained_model = 'bert-base-cased',
         f1_macro = val_result['f1_macro']
         f1_micro = val_result['f1_micro']
         print(f'Val loss {val_loss}, Val f1 macro: {f1_macro}, Val f1 micro: {f1_micro}')
+        wandb.log(val_result)
         
         history['train_result'].append(train_result)
         history['train_loss'].append(train_loss)
@@ -517,6 +519,17 @@ if __name__ == "__main__":
 
     label_list = symptom_list if "BDISen" in args.test_path else emotion_list
 
+    run = wandb.init(
+        # Set the project where this run will be logged
+        project= "Depression Model (BERT) on " + ("BDISen" if "BDISen" in args.test_path else "DepressionEmo"),
+        # Track hyperparameters and run metadata
+        config={
+            "epochs": args.epochs,
+            "batch_size": args.batch_size,
+            "test_batch_size": args.test_batch_size,
+            "max_length": args.max_length
+        },
+    )
     main(args)
     
 # python bert.py  --mode "train" --model_name "/data1/lipengfei/basemodels/bert-base-uncased" --epochs 25 --batch_size 8 --max_length 256 --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json"

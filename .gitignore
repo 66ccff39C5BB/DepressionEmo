@@ -7,3 +7,4 @@ xgb*/**
 __pycache__/**
 try.py
 *.sh
+wandb/**
