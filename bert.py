@@ -394,80 +394,7 @@ def test_dataset(test_set,
     print('Result: ', result)
 
     return result
-def predict_single(text, tokenizer, model, max_len = 256):
 
-    encoded_question = tokenizer.encode_plus(text,
-                                           max_length=max_len,
-                                           add_special_tokens=True,
-                                           return_token_type_ids=False,
-                                           #pad_to_max_length=True,
-                                           padding = "max_length",
-                                           return_attention_mask=True,
-                                           return_tensors='pt',
-                                           )
-
-    input_ids = encoded_question['input_ids'].to(device)
-    attention_mask = encoded_question['attention_mask'].to(device)
-    output = model(input_ids, attention_mask)
-    _, prediction = torch.max(output, dim=1)
-    #print(f'Text: {text}')
-    #print(f'Category: {class_names[prediction]}')
-    return prediction
-
-
-def predict_dataset(dataset, class_names, classifier_type = 'category',
-                    pretrained_model = 'bert-base-cased',
-                    model_file_name = 'best_bert_model_state_category_string.bin',
-                    out_file_name = 'wikidata//task1_wikidata_test_pred.json'):
-
-    tokenizer = BertTokenizer.from_pretrained(pretrained_model)
-    model = CategoryClassifier(len(class_names), pretrained_model)
-    model.load_state_dict(torch.load(model_file_name))
-    model = model.to(device)
-
-    data_list = []
-    for item in dataset:
-
-        if (item['question'] is None or item['question'].strip() == ''):
-            item['category'] = ''
-            item['type'] = []
-        else:
-
-            index_pred = predict_single_question(item['question'], tokenizer, model)
-            name_pred = class_names[index_pred]
-
-            if (classifier_type == 'category_string'):
-                if (name_pred == 'boolean'):
-                    item['category'] = 'boolean'
-                    item['type'] = ['boolean']
-                elif('literal,' in name_pred):
-                    item['category'] = 'literal'
-                    item['type'] = [name_pred.split(',')[1]]
-                else:
-                    item['category'] = name_pred
-                
-            else:
-                if (item['category'] != 'boolean' and item['category'] != 'literal'):
-                    name_pred_list = name_pred.split(",")
-                    name_pred_list = [n.strip() for n in name_pred_list if n.strip() != '']
-                    item['type'] = name_pred_list
-
-        data_list.append(item)
-    
-    # write dict
-    write_list_to_json_file(out_file_name, data_list, 'w')
-
-
-def classifier_by_text(dataset):
-
-    type_dict = {}
-    for item in dataset:
-        temp_type = str(item['label_id'])
-        if (temp_type not in type_dict): type_dict[temp_type] = 1
-        else: type_dict[temp_type] +=1
-   
-    type_dict = sorted(type_dict.items(), key = lambda x: x[1], reverse = True)
-    return type_dict
 
 def main(args):
     train_set = read_list_from_jsonl_file(args.train_path)
@@ -522,6 +449,7 @@ if __name__ == "__main__":
     run = wandb.init(
         # Set the project where this run will be logged
         project= "Depression Model (BERT) on " + ("BDISen" if "BDISen" in args.test_path else "DepressionEmo"),
+        name = current_time,
         # Track hyperparameters and run metadata
         config={
             "epochs": args.epochs,
