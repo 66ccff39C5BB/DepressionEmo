@@ -112,7 +112,7 @@ def create_data_loader(dataset, tokenizer, label_names, max_len, batch_size):
     return DataLoader(ds, batch_size=batch_size, num_workers=4)
 
 
-def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_examples, cur_threshold):
+def train_epoch(model, data_loader, val_data_loader, loss_fn, optimizer, device, scheduler, n_examples, cur_threshold):
 
     model = model.train()
     losses = []
@@ -146,6 +146,9 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad()
+
+        import copy
+        val_result, val_loss = eval_model(copy.deepcopy(model), val_data_loader, loss_fn, device)
 
 
     pred_list = sum(pred_list, [])
@@ -322,7 +325,7 @@ def train_model(train_set, val_set, pretrained_model = 'bert-base-cased',
         print(f'Epoch {epoch + 1}/{epochs}')
         
 
-        train_result, train_loss = train_epoch(model, train_data_loader, loss_fn, optimizer, device, scheduler, len(train_set), cur_threshold = cur_threshold)
+        train_result, train_loss = train_epoch(model, train_data_loader, val_data_loader, loss_fn, optimizer, device, scheduler, len(train_set), cur_threshold = cur_threshold)
         train_f1_macro = train_result['f1_macro']
         print(f'Train loss: {train_loss}, Train f1 macro: {train_f1_macro}')
         
@@ -368,8 +371,8 @@ def train_model(train_set, val_set, pretrained_model = 'bert-base-cased',
     
  
 def test_dataset(test_set, 
-                pretrained_model = 'bert-base-cased', saved_model_file = 'best_bert_model.bin', saved_best_threshold = 'best_threshold.json',
-                saved_history_file = 'best_bert_model.json', max_len = 256, batch_size = 8):
+                     pretrained_model = 'bert-base-cased', saved_model_file = 'best_bert_model.bin', saved_best_threshold = 'best_threshold.json',
+                     saved_history_file = 'best_bert_model.json', max_len = 256, batch_size = 8):
     
     tokenizer = BertTokenizer.from_pretrained(pretrained_model)
     best_threshold = json.load(open(saved_best_threshold, 'r'))
