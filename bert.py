@@ -12,7 +12,7 @@ import sys
 import torch
 import transformers
 import time
-import wandb
+
 
 from collections import defaultdict
 from file_io import *
@@ -119,6 +119,7 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
     i = 0
     pred_list = []
     true_list = []
+    prob_list = []
     cur_threshold = torch.tensor(cur_threshold).to(device)
     
     for d in data_loader:
@@ -140,6 +141,7 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
         losses.append(loss.item())
         pred_list.append(preds.tolist())
         true_list.append(categories.tolist())
+        prob_list.append(outputs.tolist())
             
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -150,6 +152,44 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
 
     pred_list = sum(pred_list, [])
     true_list = sum(true_list, [])
+    prob_list = sum(prob_list, [])
+
+    for main_index in range(len(label_list)):
+        if label_list[main_index] == 'Suicidal_ideas':
+            x_label = label_list[main_index]
+            main_prob_list = [prob[main_index] for prob in prob_list]
+            main_true_list = [true[main_index] for true in true_list]
+            for other_index in range(len(label_list)):
+                if label_list[other_index] == 'Pessimism':
+                    y_label = label_list[other_index]
+                    other_prob_list = [prob[other_index] for prob in prob_list]
+                    other_true_list = [true[other_index] for true in true_list]
+    figure_output_dir = 'logs/sample_dynamics'
+    if not os.path.exists(figure_output_dir):
+        os.makedirs(figure_output_dir)
+        with open(os.path.join(figure_output_dir, 'index.txt'), 'w+') as i_f:
+            i_f.write(str(0))
+        with open(os.path.join(figure_output_dir, 'X_probs.json'), 'w+') as xp_f:
+            xp_f.write(json.dumps(main_true_list)+'\n')
+        with open(os.path.join(figure_output_dir, 'Y_probs.json'), 'w+') as yp_f:
+            yp_f.write(json.dumps(other_true_list)+'\n')
+    with open(os.path.join(figure_output_dir, 'index.txt'), 'r') as i_f:
+        file_index = int(i_f.read().strip())
+    with open(os.path.join(figure_output_dir, 'index.txt'), 'w+') as i_f:
+        i_f.write(str(file_index + 1))
+    with open(os.path.join(figure_output_dir, 'X_probs.json'), 'a') as xp_f:
+        xp_f.write(json.dumps(main_prob_list)+'\n')
+    with open(os.path.join(figure_output_dir, 'Y_probs.json'), 'a') as yp_f:
+        yp_f.write(json.dumps(other_prob_list)+'\n')    
+    plt.figure()
+    plt.scatter([main_prob_list[sample_i] for sample_i in range(len(main_prob_list)) if int(other_true_list[sample_i]) == 0], [other_prob_list[sample_i] for sample_i in range(len(other_prob_list)) if int(other_true_list[sample_i]) == 0], marker='o', c=[main_true_list[sample_i] for sample_i in range(len(main_true_list)) if int(other_true_list[sample_i]) == 0], cmap='rainbow')
+    plt.scatter([main_prob_list[sample_i] for sample_i in range(len(main_prob_list)) if int(other_true_list[sample_i]) == 1], [other_prob_list[sample_i] for sample_i in range(len(other_prob_list)) if int(other_true_list[sample_i]) == 1], marker='x', c=[main_true_list[sample_i] for sample_i in range(len(main_true_list)) if int(other_true_list[sample_i]) == 1], cmap='rainbow')
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.xticks(np.arange(0, 1.1, 0.1))
+    plt.yticks(np.arange(0, 1.1, 0.1))
+    plt.title(x_label+' vs '+y_label)
+    plt.savefig(os.path.join(figure_output_dir, f'{file_index}.png'))
     
     f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
     re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
@@ -212,20 +252,6 @@ def eval_model(model, data_loader, loss_fn, device):
 
     pred_list = sum(pred_list, [])
     true_list = sum(true_list, [])
-    for main_index in range(len(label_list)):
-        main_pred_list = [pred[main_index] for pred in pred_list]
-        main_true_list = [true[main_index] for true in true_list]
-        main_f1 = f1_score(y_true=main_true_list, y_pred=main_pred_list)
-        main_re = recall_score(y_true=main_true_list, y_pred=main_pred_list)
-        main_pre = precision_score(y_true=main_true_list, y_pred=main_pred_list)
-        wandb.log({label_list[main_index] + '_f1/target_f1': main_f1, label_list[main_index] + '_recall/target_recall': main_re, label_list[main_index] + '_precision/target_precision': main_pre})
-        for other_index in range(len(label_list)):
-            if main_index == other_index: continue
-            other_true_list = [true[other_index] for true in true_list]
-            other_f1 = f1_score(y_true=other_true_list, y_pred=main_pred_list)
-            other_re = recall_score(y_true=other_true_list, y_pred=main_pred_list)
-            other_pre = precision_score(y_true=other_true_list, y_pred=main_pred_list)
-            wandb.log({label_list[main_index] + '_f1/' + label_list[other_index] + '_f1': other_f1, label_list[main_index] + '_recall/' + label_list[other_index] + '_recall': other_re, label_list[main_index] + '_precision/' + label_list[other_index] + '_precision': other_pre})
     
     f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
     re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
@@ -417,25 +443,13 @@ def main(args):
     test_set = read_list_from_jsonl_file(args.test_path)
     
     if (args.mode == 'train'):
-        run = wandb.init(
-            # Set the project where this run will be logged
-            project= "Depression Model (BERT) on " + ("BDISen" if "BDISen" in args.test_path else "DepressionEmo"),
-            name = current_time,
-            # Track hyperparameters and run metadata
-            config={
-                "epochs": args.epochs,
-                "batch_size": args.batch_size,
-                "test_batch_size": args.test_batch_size,
-                "max_length": args.max_length
-            },
-        )
         if not os.path.exists(args.resume_path):
             os.makedirs(args.resume_path)    
         train_model(train_set, val_set, pretrained_model = args.model_name, max_len = args.max_length, batch_size = args.batch_size,
                      saved_model_file = args.resume_path + '/best_bert_model.bin',
                      saved_history_file = args.resume_path + '/best_bert_model.json',
                      saved_best_threshold = args.resume_path + '/best_threshold.json', epochs = args.epochs)
-        wandb.finish()
+
         
     test_dataset(test_set, pretrained_model = args.model_name,
                     saved_model_file = args.resume_path + '/best_bert_model.bin',
