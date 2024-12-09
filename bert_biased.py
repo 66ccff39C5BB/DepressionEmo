@@ -112,9 +112,10 @@ def create_data_loader(dataset, tokenizer, label_names, max_len, batch_size):
     return DataLoader(ds, batch_size=batch_size, num_workers=4)
 
 
-def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_examples, cur_threshold):
+def train_epoch(biased_model, debiased_model, data_loader, val_data_loader, biased_loss_fn, loss_fn, biased_optimizer, debiased_optimizer, device, biased_scheduler, debiased_scheduler, n_examples, cur_threshold):
 
-    model = model.train()
+    biased_model = biased_model.train()
+    debiased_model = debiased_model.train()
     losses = []
     i = 0
     pred_list = []
@@ -130,23 +131,32 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
         input_ids = d["input_ids"].to(device)
         attention_mask = d["attention_mask"].to(device)
         categories = d["categories"].to(device)
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-
-        # _, preds = torch.max(outputs, dim=1)
-        loss = loss_fn(outputs, categories)
+        biased_outputs = biased_model(input_ids=input_ids, attention_mask=attention_mask)
+        outputs = debiased_model(input_ids=input_ids, attention_mask=attention_mask)
         preds = (outputs > cur_threshold).to(torch.float)
+
+        
+        biased_loss = biased_loss_fn(biased_outputs, categories)
+
+        biased_loss.backward()
+        nn.utils.clip_grad_norm_(biased_model.parameters(), max_norm=1.0)
+        biased_optimizer.step()
+        biased_scheduler.step()
+        biased_optimizer.zero_grad()
+
+
+        loss = loss_fn(biased_outputs, outputs, categories)
+
+        loss.backward()
+        nn.utils.clip_grad_norm_(debiased_model.parameters(), max_norm=1.0)
+        debiased_optimizer.step()
+        debiased_scheduler.step()
+        debiased_optimizer.zero_grad()
 
         
         losses.append(loss.item())
         pred_list.append(preds.tolist())
         true_list.append(categories.tolist())
-            
-        loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
-        scheduler.step()
-        optimizer.zero_grad()
-
 
     pred_list = sum(pred_list, [])
     true_list = sum(true_list, [])
@@ -283,7 +293,7 @@ def get_predictions(model, data_loader, best_threshold):
 
 def train_model(train_set, val_set, pretrained_model = 'bert-base-cased', 
                 saved_model_file = 'best_model_state.bin', saved_history_file = 'history_file.json', saved_best_threshold = 'best_threshold.json',
-                epochs = 40, max_len = 256, batch_size = 8):
+                epochs = 40, max_len = 256, batch_size = 8, q_loss = 0.5):
 
     # prepare dataset
     tokenizer = BertTokenizer.from_pretrained(pretrained_model)
@@ -293,8 +303,10 @@ def train_model(train_set, val_set, pretrained_model = 'bert-base-cased',
     #test_data_loader = create_data_loader(df_test, tokenizer, class_names, max_len, batch_size)
 
     # create model
-    model = CategoryClassifier(len(label_list), pretrained_model)
-    model = model.to(device)
+    biased_model = CategoryClassifier(len(label_list), pretrained_model)
+    biased_model = biased_model.to(device)
+    debiased_model = CategoryClassifier(len(label_list), pretrained_model)
+    debiased_model = debiased_model.to(device)
 
     # data = next(iter(train_data_loader))
     # input_ids = data['input_ids'].to(device)
@@ -302,14 +314,48 @@ def train_model(train_set, val_set, pretrained_model = 'bert-base-cased',
     #F.softmax(model(input_ids, attention_mask), dim=1)
     
     # lr=2e-5
-    optimizer = AdamW(model.parameters(), lr=2e-5, correct_bias=True)
+    biased_optimizer = AdamW(biased_model.parameters(), lr=2e-5, correct_bias=True)
     total_steps = len(train_data_loader) * epochs
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
+    biased_scheduler = get_linear_schedule_with_warmup(
+        biased_optimizer,
         num_warmup_steps=0,
         num_training_steps=total_steps
         )
-    loss_fn = nn.CrossEntropyLoss().to(device)
+
+    debiased_optimizer = AdamW(debiased_model.parameters(), lr=2e-5, correct_bias=True)
+    debiased_scheduler = get_linear_schedule_with_warmup(
+        debiased_optimizer,
+        num_warmup_steps=0,
+        num_training_steps=total_steps
+        )
+    
+    class GeneralizedCrossEntropy(nn.Module):
+        def __init__(self, q=0.5):
+            super(GeneralizedCrossEntropy, self).__init__()
+            self.q = q
+
+        def forward(self, inputs, targets):
+            loss = (1 - torch.pow(inputs, self.q)) * targets / self.q
+            loss = loss.sum(dim=1).mean()
+            return loss
+    
+    class WeightedCrossEntropy(nn.Module):
+        def __init__(self):
+            super(WeightedCrossEntropy, self).__init__()
+
+        def cross_entropy(self, inputs, targets):
+            # without sum
+            return -targets * torch.log(inputs) - (1 - targets) * torch.log(1 - inputs)
+
+        def forward(self, bias_inputs, inputs, targets):
+            bias_loss = self.cross_entropy(bias_inputs, targets)
+            debias_loss = self.cross_entropy(inputs, targets)
+            weight = bias_loss / (bias_loss + debias_loss)
+            loss = weight.detach() * debias_loss
+            return loss.sum(dim=1).mean()
+        
+    biased_loss_fn = GeneralizedCrossEntropy(q_loss).to(device)
+    loss_fn = WeightedCrossEntropy().to(device)
 
     history = defaultdict(list)
     best_metric = 0
@@ -322,11 +368,11 @@ def train_model(train_set, val_set, pretrained_model = 'bert-base-cased',
         print(f'Epoch {epoch + 1}/{epochs}')
         
 
-        train_result, train_loss = train_epoch(model, train_data_loader, loss_fn, optimizer, device, scheduler, len(train_set), cur_threshold = cur_threshold)
+        train_result, train_loss = train_epoch(biased_model, debiased_model, train_data_loader, val_data_loader, biased_loss_fn, loss_fn, biased_optimizer, debiased_optimizer, device, biased_scheduler, debiased_scheduler, len(train_set), cur_threshold = cur_threshold)
         train_f1_macro = train_result['f1_macro']
         print(f'Train loss: {train_loss}, Train f1 macro: {train_f1_macro}')
         
-        val_result, val_loss = eval_model(model, val_data_loader, loss_fn, device)
+        val_result, val_loss = eval_model(debiased_model, val_data_loader, nn.CrossEntropyLoss().to(device), device)
 
         cur_threshold = val_result['best_threshold']
         
@@ -342,7 +388,10 @@ def train_model(train_set, val_set, pretrained_model = 'bert-base-cased',
         history['val_loss'].append(val_loss)
       
         if f1_macro + f1_micro > best_metric:
-            torch.save(model.state_dict(), saved_model_file)
+            biased_save_path = 'bert-base-biased/' + current_time + '/best_bert_model.bin'
+            if not os.path.exists('bert-base-biased/' + current_time): os.makedirs('bert-base-biased/' + current_time)
+            torch.save(biased_model.state_dict(), biased_save_path)
+            torch.save(debiased_model.state_dict(), saved_model_file)
             json.dump(cur_threshold, open(saved_best_threshold, 'w+'))
             print('Model saved.')
             best_metric = f1_macro + f1_micro
@@ -419,7 +468,7 @@ def main(args):
     if (args.mode == 'train'):
         run = wandb.init(
             # Set the project where this run will be logged
-            project= "Depression Model (BERT) on " + ("BDISen" if "BDISen" in args.test_path else "DepressionEmo"),
+            project= "Biased Depression Model (BERT) on " + ("BDISen" if "BDISen" in args.test_path else "DepressionEmo"),
             name = current_time,
             # Track hyperparameters and run metadata
             config={
@@ -434,7 +483,7 @@ def main(args):
         train_model(train_set, val_set, pretrained_model = args.model_name, max_len = args.max_length, batch_size = args.batch_size,
                      saved_model_file = args.resume_path + '/best_bert_model.bin',
                      saved_history_file = args.resume_path + '/best_bert_model.json',
-                     saved_best_threshold = args.resume_path + '/best_threshold.json', epochs = args.epochs)
+                     saved_best_threshold = args.resume_path + '/best_threshold.json', epochs = args.epochs, q_loss = args.q)
         wandb.finish()
         
     test_dataset(test_set, pretrained_model = args.model_name,
@@ -466,8 +515,9 @@ if __name__ == "__main__":
     parser.add_argument('--max_length', type=int, default=256)
     parser.add_argument('--model_path', type=str, default='bart-base\checkpoint-452')
     parser.add_argument('--test_file', type=str, default='dataset/test.json')
+    parser.add_argument('--q', type=float, default=0.5) #GCE parameter
 
-    parser.add_argument('--resume_path', type=str, default='bert-base/'+current_time)
+    parser.add_argument('--resume_path', type=str, default='bert-base-debiased/'+current_time)
     args = parser.parse_args()
     
     print('args: ', args)
