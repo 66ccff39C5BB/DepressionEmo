@@ -1,6 +1,7 @@
 import json
 import numpy as np
 import matplotlib.pyplot as plt
+import pickle
 
 def label_transform(label_id, label_list_length):
     data_label = str(label_id)
@@ -59,6 +60,9 @@ if __name__ == '__main__':
     emotion_test_labels = read_labels('Dataset/test.json', len(emotion_list))
     emotion_labels = np.array(emotion_train_labels + emotion_val_labels + emotion_test_labels)
     emotion_corr = pearson_correlation_coefficient(emotion_labels.T)
+    emotion_matrix_savepath = 'emotion_correlation_matrix.pkl'
+    with open(emotion_matrix_savepath, 'wb') as f:
+        pickle.dump(emotion_corr, f)
     save_correlation_matrix_as_figure(emotion_corr, emotion_list, "emotion_correlation_matrix.png")
     
     symptom_train_labels = read_labels('Dataset/train_BDISen.json', len(symptom_list))
@@ -66,4 +70,7 @@ if __name__ == '__main__':
     symptom_test_labels = read_labels('Dataset/test_BDISen.json', len(symptom_list))
     symptom_labels = np.array(symptom_train_labels + symptom_val_labels + symptom_test_labels)
     symptom_corr = pearson_correlation_coefficient(symptom_labels.T)
+    symptom_matrix_savepath = 'symptom_correlation_matrix.pkl'
+    with open(symptom_matrix_savepath, 'wb') as f:
+        pickle.dump(symptom_corr, f)
     save_correlation_matrix_as_figure(symptom_corr, symptom_list, "symptom_correlation_matrix.png")
