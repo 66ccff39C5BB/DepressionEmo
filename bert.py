@@ -133,7 +133,16 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
         outputs = model(input_ids=input_ids, attention_mask=attention_mask)
 
         # _, preds = torch.max(outputs, dim=1)
-        loss = loss_fn(outputs, categories)
+        import pickle
+        if len(label_list) == len(emotion_list):
+            with open('emotion_correlation_matrix.pkl', 'rb') as f:
+                corr_matrix = pickle.load(f)
+        else:
+            with open('symptom_correlation_matrix.pkl', 'rb') as f:
+                corr_matrix = pickle.load(f)
+        corr_matrix = torch.from_numpy(corr_matrix).to(device)
+
+        loss = torch.sum( - corr_matrix * (categories.T @ torch.log(outputs)))
         preds = (outputs > cur_threshold).to(torch.float)
 
         
