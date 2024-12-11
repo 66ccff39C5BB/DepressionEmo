@@ -1,2 +1,2 @@
 time=$(date "+%Y%m%d-%H%M%S")
-CUDA_VISIBLE_DEVICES=0 python bert.py  --mode "train" --model_name "/data1/lipengfei/basemodels/bert-base-uncased" --epochs 25 --batch_size 8 --max_length 256 --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json" > logs/${time}Bert.log
+CUDA_VISIBLE_DEVICES=2 python bert.py  --mode "train" --model_name "/data1/lipengfei/basemodels/bert-base-uncased" --epochs 25 --batch_size 8 --max_length 256 --train_path "Dataset/train.json" --val_path "Dataset/val.json" --test_path "Dataset/test.json" > logs/${time}Bert.log

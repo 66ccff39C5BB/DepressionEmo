@@ -345,7 +345,7 @@ def train_model(train_set, val_set, pretrained_model = 'bert-base-cased',
 
         def cross_entropy(self, inputs, targets):
             # without sum
-            return -targets * torch.log(inputs) - (1 - targets) * torch.log(1 - inputs)
+            return -targets * torch.log(inputs)
 
         def forward(self, bias_inputs, inputs, targets):
             bias_loss = self.cross_entropy(bias_inputs, targets)
