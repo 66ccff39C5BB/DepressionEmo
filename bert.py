@@ -334,7 +334,7 @@ def train_model(train_set, val_set, pretrained_model = 'bert-base-cased',
         f1_micro = val_result['f1_micro']
         print(f'Val loss {val_loss}, Val f1 macro: {f1_macro}, Val f1 micro: {f1_micro}')
 
-        # wandb.log(val_result)
+        wandb.log(val_result)
         
         history['train_result'].append(train_result)
         history['train_loss'].append(train_loss)
