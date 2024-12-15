@@ -384,75 +384,33 @@ def test_dataset(test_set,
     model.load_state_dict(torch.load(saved_model_file))
     model = model.to(device)
     
-    texts, pred_list, pred_probs, true_list = get_predictions(model, test_data_loader, best_threshold)
+    texts, pred_lists, pred_probs, true_lists = get_predictions(model, test_data_loader, best_threshold)
     
-    print('Accuracy: ', ((pred_list == true_list).sum(dim=0) / len(true_list)).tolist())
-    pred_list = pred_list.tolist()
-    true_list = true_list.tolist()
-    with open('result.txt', 'w+') as f:
-        f.write('Predict Result: \n')
-        f.write('[')
-        for i in range(len(pred_list)):
-            f.write('[')
-            for j in range(len(pred_list[i])-1):
-                f.write(str(int(pred_list[i][j])) + ',')
-            f.write(str(int(pred_list[i][-1])) + ']')
-            if i != len(pred_list) - 1: f.write(',\n')
-        f.write(']\n')
-        f.write('True Result: \n')
-        f.write('[')
-        for i in range(len(true_list)):
-            f.write('[')
-            for j in range(len(true_list[i])-1):
-                f.write(str(int(true_list[i][j])) + ',')
-            f.write(str(int(true_list[i][-1])) + ']')
-            if i != len(true_list) - 1: f.write(',\n')
-        f.write(']\n')
-    re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
-    pre_mi = precision_score(y_true=true_list, y_pred=pred_list, average='micro')
-    re_mac = recall_score(y_true=true_list, y_pred=pred_list, average='macro')
-    pre_mac = precision_score(y_true=true_list, y_pred=pred_list, average='macro')
-
-    def micro_f1_score(y_true, y_pred):
-        true_positives = np.sum(np.logical_and(y_pred == 1, y_true == 1))
-        false_positives = np.sum(np.logical_and(y_pred == 1, y_true == 0))
-        false_negatives = np.sum(np.logical_and(y_pred == 0, y_true == 1))
+    for label_index in range(len(label_list)):
+        print('Label: ', label_list[label_index])
+        print('Accuracy:', (pred_lists[:, label_index] == true_lists[:, label_index]).sum() / pred_lists.shape[0])
+        pred_list = pred_lists[:, label_index].tolist()
+        true_list = true_lists[:, label_index].tolist()
         
-        precision = true_positives / (true_positives + false_positives + 1e-10)
-        recall = true_positives / (true_positives + false_negatives + 1e-10)
-        f1 = 2 * (precision * recall) / (precision + recall + 1e-10)
-        return f1
-
-    def macro_f1_score(y_true, y_pred):
-        f1_scores = []
-        for i in range(y_true.shape[1]):
-            true_positives = np.sum(np.logical_and(y_pred[:, i] == 1, y_true[:, i] == 1))
-            false_positives = np.sum(np.logical_and(y_pred[:, i] == 1, y_true[:, i] == 0))
-            false_negatives = np.sum(np.logical_and(y_pred[:, i] == 0, y_true[:, i] == 1))
-            
-            precision = true_positives / (true_positives + false_positives + 1e-10)
-            recall = true_positives / (true_positives + false_negatives + 1e-10)
-            f1 = 2 * (precision * recall) / (precision + recall + 1e-10)
-            f1_scores.append(f1)
-        return np.mean(f1_scores)
-
-    pred_list = np.array(pred_list)
-    true_list = np.array(true_list)
-    f1_mi = micro_f1_score(true_list, pred_list)
-    f1_mac = macro_f1_score(true_list, pred_list)
-    result = {}
-    result['f1_micro'] = f1_mi
-    result['recall_micro'] = re_mi
-    result['precision_micro'] = pre_mi
-    
-    result['f1_macro'] = f1_mac
-    result['recall_macro'] = re_mac
-    result['precision_macro'] = pre_mac
-    
-    print('Accuracy: ', accuracy_score(true_list, pred_list))
-    print('Result: ', result)
-
-    return result
+        f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
+        re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
+        pre_mi = precision_score(y_true=true_list, y_pred=pred_list, average='micro')
+        
+        f1_mac = f1_score(y_true=true_list, y_pred=pred_list, average='macro')
+        re_mac = recall_score(y_true=true_list, y_pred=pred_list, average='macro')
+        pre_mac = precision_score(y_true=true_list, y_pred=pred_list, average='macro')
+        
+        result = {}
+        result['f1_micro'] = f1_mi
+        result['recall_micro'] = re_mi
+        result['precision_micro'] = pre_mi
+        
+        result['f1_macro'] = f1_mac
+        result['recall_macro'] = re_mac
+        result['precision_macro'] = pre_mac
+        
+        print('accuracy: ', accuracy_score(y_true=true_list, y_pred=pred_list))
+        print('Result: ', result)
 
 
 def main(args):
