@@ -411,6 +411,28 @@ def test_dataset(test_set,
         
         print('accuracy: ', accuracy_score(y_true=true_list, y_pred=pred_list))
         print('Result: ', result)
+    
+    pred_list = pred_lists.tolist()
+    true_list = true_lists.tolist()
+    print('Overall Result: ')
+    f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
+    re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
+    pre_mi = precision_score(y_true=true_list, y_pred=pred_list, average='micro')
+
+    f1_mac = f1_score(y_true=true_list, y_pred=pred_list, average='macro')
+    re_mac = recall_score(y_true=true_list, y_pred=pred_list, average='macro')
+    pre_mac = precision_score(y_true=true_list, y_pred=pred_list, average='macro')
+
+    result = {}
+    result['f1_micro'] = f1_mi
+    result['recall_micro'] = re_mi
+    result['precision_micro'] = pre_mi
+
+    result['f1_macro'] = f1_mac
+    result['recall_macro'] = re_mac
+    result['precision_macro'] = pre_mac
+
+    print('Result: ', result)
 
 
 def main(args):
