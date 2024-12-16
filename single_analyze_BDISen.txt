@@ -1,0 +1,150 @@
+args:  Namespace(batch_size=4, epochs=40, max_length=256, mode='test', model_name='/data1/lipengfei/basemodels/bert-base-uncased', model_path='bart-base\\checkpoint-452', resume_path='bert-base/20241128194235', test_batch_size=16, test_file='dataset/test.json', test_path='Dataset/test_BDISen.json', train_path='Dataset/train_BDISen.json', val_path='Dataset/val_BDISen.json')
+Label:  Sadness
+Accuracy: tensor(0.8119)
+Positive sample rate in trainset:  0.2185929648241206
+Positive sample rate in valset:  0.2235294117647059
+Positive sample rate in testset:  tensor(0.0760)
+accuracy:  0.8118908382066277
+Result:  {'f1': 0.4340175953079179, 'recall': 0.9487179487179487, 'precision': 0.2813688212927757}
+Label:  Pessimism
+Accuracy: tensor(0.9786)
+Positive sample rate in trainset:  0.09882747068676717
+Positive sample rate in valset:  0.1
+Positive sample rate in testset:  tensor(0.0341)
+accuracy:  0.9785575048732943
+Result:  {'f1': 0.7380952380952381, 'recall': 0.8857142857142857, 'precision': 0.6326530612244898}
+Label:  Sense_of_failure
+Accuracy: tensor(0.9405)
+Positive sample rate in trainset:  0.10804020100502512
+Positive sample rate in valset:  0.12941176470588237
+Positive sample rate in testset:  tensor(0.0400)
+accuracy:  0.9405458089668616
+Result:  {'f1': 0.5673758865248227, 'recall': 0.975609756097561, 'precision': 0.4}
+Label:  Loss_of_Pleasure
+Accuracy: tensor(0.7934)
+Positive sample rate in trainset:  0.12144053601340034
+Positive sample rate in valset:  0.1411764705882353
+Positive sample rate in testset:  tensor(0.0312)
+accuracy:  0.7933723196881092
+Result:  {'f1': 0.23188405797101452, 'recall': 1.0, 'precision': 0.13114754098360656}
+Label:  Guilty_feelings
+Accuracy: tensor(0.9961)
+Positive sample rate in trainset:  0.051926298157453935
+Positive sample rate in valset:  0.047058823529411764
+Positive sample rate in testset:  tensor(0.0205)
+accuracy:  0.9961013645224172
+Result:  {'f1': 0.9, 'recall': 0.8571428571428571, 'precision': 0.9473684210526315}
+Label:  Sense_of_punishment
+Accuracy: tensor(1.)
+Positive sample rate in trainset:  0.04020100502512563
+Positive sample rate in valset:  0.029411764705882353
+Positive sample rate in testset:  tensor(0.0146)
+accuracy:  1.0
+Result:  {'f1': 1.0, 'recall': 1.0, 'precision': 1.0}
+Label:  Self-dislike
+Accuracy: tensor(0.9688)
+Positive sample rate in trainset:  0.11055276381909548
+Positive sample rate in valset:  0.14705882352941177
+Positive sample rate in testset:  tensor(0.0400)
+accuracy:  0.9688109161793372
+Result:  {'f1': 0.7090909090909091, 'recall': 0.9512195121951219, 'precision': 0.5652173913043478}
+Label:  Self-incrimination
+Accuracy: tensor(0.9873)
+Positive sample rate in trainset:  0.015912897822445562
+Positive sample rate in valset:  0.011764705882352941
+Positive sample rate in testset:  tensor(0.0029)
+accuracy:  0.9873294346978557
+Result:  {'f1': 0.3157894736842105, 'recall': 1.0, 'precision': 0.1875}
+Label:  Suicidal_ideas
+Accuracy: tensor(0.9786)
+Positive sample rate in trainset:  0.035175879396984924
+Positive sample rate in valset:  0.03529411764705882
+Positive sample rate in testset:  tensor(0.0068)
+accuracy:  0.9785575048732943
+Result:  {'f1': 0.3888888888888889, 'recall': 1.0, 'precision': 0.2413793103448276}
+Label:  Crying
+Accuracy: tensor(0.9961)
+Positive sample rate in trainset:  0.05527638190954774
+Positive sample rate in valset:  0.03529411764705882
+Positive sample rate in testset:  tensor(0.0146)
+accuracy:  0.9961013645224172
+Result:  {'f1': 0.8749999999999999, 'recall': 0.9333333333333333, 'precision': 0.8235294117647058}
+Label:  Agitation
+Accuracy: tensor(0.9903)
+Positive sample rate in trainset:  0.035175879396984924
+Positive sample rate in valset:  0.011764705882352941
+Positive sample rate in testset:  tensor(0.0107)
+accuracy:  0.9902534113060428
+Result:  {'f1': 0.6875000000000001, 'recall': 1.0, 'precision': 0.5238095238095238}
+Label:  Social_withdrawal
+Accuracy: tensor(0.9815)
+Positive sample rate in trainset:  0.04355108877721943
+Positive sample rate in valset:  0.03529411764705882
+Positive sample rate in testset:  tensor(0.0136)
+accuracy:  0.9814814814814815
+Result:  {'f1': 0.5581395348837208, 'recall': 0.8571428571428571, 'precision': 0.41379310344827586}
+Label:  Indecision
+Accuracy: tensor(0.9912)
+Positive sample rate in trainset:  0.01507537688442211
+Positive sample rate in valset:  0.023529411764705882
+Positive sample rate in testset:  tensor(0.0107)
+accuracy:  0.9912280701754386
+Result:  {'f1': 0.5714285714285713, 'recall': 0.5454545454545454, 'precision': 0.6}
+Label:  Feelings_of_worthlessness
+Accuracy: tensor(0.9971)
+Positive sample rate in trainset:  0.05443886097152429
+Positive sample rate in valset:  0.06470588235294118
+Positive sample rate in testset:  tensor(0.0234)
+accuracy:  0.9970760233918129
+Result:  {'f1': 0.9411764705882353, 'recall': 1.0, 'precision': 0.8888888888888888}
+Label:  Loss_of_energy
+Accuracy: tensor(0.9951)
+Positive sample rate in trainset:  0.025963149078726967
+Positive sample rate in valset:  0.01764705882352941
+Positive sample rate in testset:  tensor(0.0049)
+accuracy:  0.9951267056530214
+Result:  {'f1': 0.5454545454545454, 'recall': 0.6, 'precision': 0.5}
+Label:  Change_of_sleep
+Accuracy: tensor(0.9971)
+Positive sample rate in trainset:  0.009212730318257957
+Positive sample rate in valset:  0.011764705882352941
+Positive sample rate in testset:  tensor(0.0029)
+accuracy:  0.9970760233918129
+Result:  {'f1': 0.6666666666666666, 'recall': 1.0, 'precision': 0.5}
+Label:  Irritability
+Accuracy: tensor(0.9844)
+Positive sample rate in trainset:  0.06030150753768844
+Positive sample rate in valset:  0.08823529411764706
+Positive sample rate in testset:  tensor(0.0224)
+accuracy:  0.9844054580896686
+Result:  {'f1': 0.7037037037037037, 'recall': 0.8260869565217391, 'precision': 0.6129032258064516}
+Label:  Changes_in_appetite
+Accuracy: tensor(0.9873)
+Positive sample rate in trainset:  0.010050251256281407
+Positive sample rate in valset:  0.011764705882352941
+Positive sample rate in testset:  tensor(0.0010)
+accuracy:  0.9873294346978557
+Result:  {'f1': 0.13333333333333333, 'recall': 1.0, 'precision': 0.07142857142857142}
+Label:  Concentration_difficulty
+Accuracy: tensor(0.9942)
+Positive sample rate in trainset:  0.021775544388609715
+Positive sample rate in valset:  0.01764705882352941
+Positive sample rate in testset:  tensor(0.0058)
+accuracy:  0.9941520467836257
+Result:  {'f1': 0.5, 'recall': 0.5, 'precision': 0.5}
+Label:  Tiredness_or_fatigue
+Accuracy: tensor(0.9688)
+Positive sample rate in trainset:  0.03768844221105527
+Positive sample rate in valset:  0.041176470588235294
+Positive sample rate in testset:  tensor(0.0088)
+accuracy:  0.9688109161793372
+Result:  {'f1': 0.3333333333333333, 'recall': 0.8888888888888888, 'precision': 0.20512820512820512}
+Label:  Loss_of_interest_in_sex
+Accuracy: tensor(0.9981)
+Positive sample rate in trainset:  0.0033500837520938024
+Positive sample rate in valset:  0.0
+Positive sample rate in testset:  tensor(0.)
+accuracy:  0.9980506822612085
+Result:  {'f1': 0.0, 'recall': 0.0, 'precision': 0.0}
+Overall Result: 
+Result:  {'f1_micro': 0.5159914712153518, 'recall_micro': 0.9189873417721519, 'precision_micro': 0.358695652173913, 'f1_macro': 0.5619465813788148, 'recall_macro': 0.8461576638671018, 'precision_macro': 0.4774340703084429}

@@ -77,20 +77,7 @@ class CategoryClassifier(nn.Module):
         output = self.sigmoid(output)
         return output
 
-def search_index(type_list, class_names):
 
-    for index, c in enumerate(class_names):
-        c_list = c
-        
-        if (type(c) is tuple): c_list = [*c]
-        else: c_list = [c_list]
-        
-        #print('-- c_list: ', c_list)
-        n_intersection = len(set(c_list).intersection(set(type_list)))
-        #print('-- n_intersection: ', n_intersection)
-        if (n_intersection == len(c_list) and len(c_list) == len(type_list)): return index
-
-    return -1
 
 def create_data_loader(dataset, tokenizer, label_names, max_len, batch_size):
 
@@ -367,9 +354,27 @@ def train_model(train_set, val_set, pretrained_model = 'bert-base-cased',
         print('-' * 50)
     
  
-def test_dataset(test_set, 
+def test_dataset(train_set, val_set, test_set, 
                 pretrained_model = 'bert-base-cased', saved_model_file = 'best_bert_model.bin', saved_best_threshold = 'best_threshold.json',
                 saved_history_file = 'best_bert_model.json', max_len = 256, batch_size = 8):
+    
+    train_labels = [0] * len(label_list)
+    for item in train_set:
+        item_classifier = str(item['label_id'])
+        while len(item_classifier) < len(label_list): item_classifier = '0' + item_classifier
+        label = [int(x) for x in item_classifier]
+        assert len(label) == len(label_list)
+        for index in range(len(label_list)):
+            train_labels[index] += int(label[index])
+    val_labels = [0] * len(label_list)
+    for item in val_set:
+        item_classifier = str(item['label_id'])
+        while len(item_classifier) < len(label_list): item_classifier = '0' + item_classifier
+        label = [int(x) for x in item_classifier]
+        assert len(label) == len(label_list)
+        for index in range(len(label_list)):
+            val_labels[index] += int(label[index])
+
     
     tokenizer = BertTokenizer.from_pretrained(pretrained_model)
     best_threshold = json.load(open(saved_best_threshold, 'r'))
@@ -389,6 +394,9 @@ def test_dataset(test_set,
     for label_index in range(len(label_list)):
         print('Label: ', label_list[label_index])
         print('Accuracy:', (pred_lists[:, label_index] == true_lists[:, label_index]).sum() / pred_lists.shape[0])
+        print('Positive sample rate in trainset: ', train_labels[label_index] / len(train_set))
+        print('Positive sample rate in valset: ', val_labels[label_index] / len(val_set))
+        print('Positive sample rate in testset: ', true_lists[:, label_index].sum().item() / len(true_lists))
         pred_list = pred_lists[:, label_index].tolist()
         true_list = true_lists[:, label_index].tolist()
         
@@ -453,7 +461,7 @@ def main(args):
                      saved_best_threshold = args.resume_path + '/best_threshold.json', epochs = args.epochs)
         wandb.finish()
         
-    test_dataset(test_set, pretrained_model = args.model_name,
+    test_dataset(train_set, val_set, test_set, pretrained_model = args.model_name,
                     saved_model_file = args.resume_path + '/best_bert_model.bin',
                     saved_history_file = args.resume_path + '/best_bert_model.json',
                     saved_best_threshold = args.resume_path + '/best_threshold.json',
