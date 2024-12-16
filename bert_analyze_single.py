@@ -392,22 +392,14 @@ def test_dataset(test_set,
         pred_list = pred_lists[:, label_index].tolist()
         true_list = true_lists[:, label_index].tolist()
         
-        f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
-        re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
-        pre_mi = precision_score(y_true=true_list, y_pred=pred_list, average='micro')
-        
-        f1_mac = f1_score(y_true=true_list, y_pred=pred_list, average='macro')
-        re_mac = recall_score(y_true=true_list, y_pred=pred_list, average='macro')
-        pre_mac = precision_score(y_true=true_list, y_pred=pred_list, average='macro')
+        f1 = f1_score(y_true=true_list, y_pred=pred_list, average='binary')
+        re = recall_score(y_true=true_list, y_pred=pred_list, average='binary')
+        pre = precision_score(y_true=true_list, y_pred=pred_list, average='binary')
         
         result = {}
-        result['f1_micro'] = f1_mi
-        result['recall_micro'] = re_mi
-        result['precision_micro'] = pre_mi
-        
-        result['f1_macro'] = f1_mac
-        result['recall_macro'] = re_mac
-        result['precision_macro'] = pre_mac
+        result['f1'] = f1
+        result['recall'] = re
+        result['precision'] = pre
         
         print('accuracy: ', accuracy_score(y_true=true_list, y_pred=pred_list))
         print('Result: ', result)
