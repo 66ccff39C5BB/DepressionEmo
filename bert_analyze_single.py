@@ -374,6 +374,7 @@ def test_dataset(train_set, val_set, test_set,
         assert len(label) == len(label_list)
         for index in range(len(label_list)):
             val_labels[index] += int(label[index])
+    
 
     
     tokenizer = BertTokenizer.from_pretrained(pretrained_model)
@@ -391,6 +392,8 @@ def test_dataset(train_set, val_set, test_set,
     
     texts, pred_lists, pred_probs, true_lists = get_predictions(model, test_data_loader, best_threshold)
     
+    resampled_samples = []
+    resampled_f1s = []
     for label_index in range(len(label_list)):
         print('Label: ', label_list[label_index])
         print('Accuracy:', (pred_lists[:, label_index] == true_lists[:, label_index]).sum() / pred_lists.shape[0])
@@ -399,10 +402,28 @@ def test_dataset(train_set, val_set, test_set,
         print('Positive sample rate in testset: ', true_lists[:, label_index].sum().item() / len(true_lists))
         pred_list = pred_lists[:, label_index].tolist()
         true_list = true_lists[:, label_index].tolist()
+
+        if int(sum(true_list)) != 0:
+            #resample test dataset
+            train_pos_rate = train_labels[label_index] / len(train_set)
+            test_pos_samples = [(pred_list[i], true_list[i]) for i in range(len(pred_list)) if true_list[i] == 1]
+            test_neg_samples = [(pred_list[i], true_list[i]) for i in range(len(pred_list)) if true_list[i] == 0]
+            test_neg_samples = random.sample(test_neg_samples, int(len(test_pos_samples) / train_pos_rate))
+            test_resampled_samples = test_pos_samples + test_neg_samples
+            random.shuffle(test_resampled_samples)
+            pred_list = [x[0] for x in test_resampled_samples]
+            true_list = [x[1] for x in test_resampled_samples]
+
+            print('Positive sample number in testset: ', len(test_pos_samples))
+            print('Positive sample rate in resampled testset: ', sum(true_list) / len(true_list))
+            resampled_samples.extend(test_resampled_samples)
+        else:
+            resampled_samples.extend([(pred_list[i], true_list[i]) for i in range(len(pred_list))])
         
         f1 = f1_score(y_true=true_list, y_pred=pred_list, average='binary')
         re = recall_score(y_true=true_list, y_pred=pred_list, average='binary')
         pre = precision_score(y_true=true_list, y_pred=pred_list, average='binary')
+        resampled_f1s.append(f1)
         
         result = {}
         result['f1'] = f1
@@ -412,26 +433,21 @@ def test_dataset(train_set, val_set, test_set,
         print('accuracy: ', accuracy_score(y_true=true_list, y_pred=pred_list))
         print('Result: ', result)
     
-    pred_list = pred_lists.tolist()
-    true_list = true_lists.tolist()
     print('Overall Result: ')
-    f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='micro')
-    re_mi = recall_score(y_true=true_list, y_pred=pred_list, average='micro')
-    pre_mi = precision_score(y_true=true_list, y_pred=pred_list, average='micro')
-
-    f1_mac = f1_score(y_true=true_list, y_pred=pred_list, average='macro')
-    re_mac = recall_score(y_true=true_list, y_pred=pred_list, average='macro')
-    pre_mac = precision_score(y_true=true_list, y_pred=pred_list, average='macro')
+    true_list = [x[1] for x in resampled_samples]
+    pred_list = [x[0] for x in resampled_samples]
+    re = recall_score(y_true=true_list, y_pred=pred_list, average='binary')
+    pre = precision_score(y_true=true_list, y_pred=pred_list, average='binary')
+    f1_mi = f1_score(y_true=true_list, y_pred=pred_list, average='binary')
+    
+    f1_mac = np.mean(resampled_f1s)
 
     result = {}
     result['f1_micro'] = f1_mi
-    result['recall_micro'] = re_mi
-    result['precision_micro'] = pre_mi
+    result['recall'] = re
+    result['precision'] = pre
 
     result['f1_macro'] = f1_mac
-    result['recall_macro'] = re_mac
-    result['precision_macro'] = pre_mac
-
     print('Result: ', result)
 
 
